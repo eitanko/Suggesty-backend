@@ -61,7 +61,7 @@ def save_step():
             url=data["url"],
             event_type=data["eventType"],
             element=data["element"],
-            screen_path=screenshot_url,
+            screenshot_url=screenshot_url,
             index=data["index"]
         )
 

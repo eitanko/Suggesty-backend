@@ -30,7 +30,7 @@ def upload_to_s3(file_data, file_name, bucket_name):
     except Exception as e:
         raise Exception(f"Failed to upload to S3: {str(e)}")
 
-@step_blueprint.route('/api/steps', methods=['POST'])
+@step_blueprint.route('/', methods=['POST'])
 def save_step():
     try:
         data = request.json

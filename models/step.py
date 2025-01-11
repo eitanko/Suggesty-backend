@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 class Step(db.Model):
-    __tablename__ = 'steps'
+    __tablename__ = "Step"
 
     id = db.Column(db.Integer, primary_key=True)
     journey_id = db.Column("journeyId", db.Integer, nullable=False)  # CamelCase in DB

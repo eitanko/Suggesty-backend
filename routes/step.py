@@ -64,6 +64,7 @@ def save_step():
             screenshot_url=screenshot_url,
             index=data["index"]
         )
+        print(step_details)
 
         # Add to the database session and commit
         db.session.add(step_details)
@@ -73,3 +74,4 @@ def save_step():
     except Exception as e:
         print(f"Error saving step: {str(e)}")  # Log the error
         return jsonify({"success": False, "error": str(e)}), 500
+

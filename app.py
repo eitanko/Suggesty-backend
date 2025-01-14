@@ -9,7 +9,10 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # Enable CORS
-CORS(app, resources={r"/api/*": {"origins": "chrome-extension://gngngnjepafimnjjhcinddkehmhadoip"}})
+CORS(app, resources={r"/api/*": {"origins": [
+        "chrome-extension://killleidajemobjblfojagljbfcgmcjg",
+        "chrome-extension://gngngnjepafimnjjhcinddkehmhadoip"
+    ]}})
 
 # Initialize extensions
 db.init_app(app)

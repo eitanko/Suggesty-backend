@@ -15,7 +15,7 @@ event_blueprint = Blueprint('event', __name__)
 
 
 # Route to handle event POST requests
-@event_blueprint.route('/', methods=['POST'])
+@event_blueprint.route('/', methods=['POST', 'OPTIONS'])
 def log_event():
     # Get the event data from the incoming JSON request
     data = request.get_json()

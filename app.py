@@ -10,13 +10,8 @@ app.config.from_object(Config)
 
 # Enable CORS
 CORS(app, resources={
-    r"/api/event": {
-        "origins": { "chrome-extension://oibhpclchlfjbocpkcompjjohenaepcf"},
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
-    },
-    r"/api/step": {
-        "origins": {"chrome-extension://killleidajemobjblfojagljbfcgmcjg"},
+    r"/api/*": {
+        "origins": "*",  # Allow all origins
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"]
     }

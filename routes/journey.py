@@ -31,3 +31,18 @@ def add_journey():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to add journey', 'message': str(e)}), 500
+
+# 🔹 GET: Fetch a journey by startUrl
+@journey_blueprint.route('/get_journey_id', methods=['GET'])
+def get_journey_id():
+    start_url = request.args.get("url")
+
+    if not start_url:
+        return jsonify({"error": "Missing 'url' parameter"}), 400
+
+    journey = Journey.query.filter_by(startUrl=start_url).first()
+
+    if journey:
+        return jsonify({"id": journey.id})
+    else:
+        return jsonify({"error": "Journey not found"}), 404

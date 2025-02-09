@@ -1,53 +1,88 @@
-# routes/indirect_paths.py
 from flask import Blueprint, jsonify
 from collections import Counter
 
 indirect_paths_blueprint = Blueprint("indirect_paths", __name__)
 
-# Mock data for journeys
-journey_mock = {
-    "id": 1,
-    "journey_name": "Ideal Checkout Flow",
-    "steps": [
-        {"url": "/cart", "dom_hash": "abc123xyz"},
-        {"url": "/checkout", "dom_hash": "def456uvw"},
-        {"url": "/confirmation", "dom_hash": "ghi789rst"},
-    ],
+# Ideal journey structure
+ideal_journey = {
+    "/": "//button[contains(., 'Import listings')]",
+    "lite/airbnb/connect": "//button[contains(., 'First, connect to Airbnb')]",
+    "lite/airbnb/select": "//button[contains(., 'Import your listings')]"
 }
 
-# Mock data for events
-events_mock = [
-    {"session_id": "sess1", "user_id": "user1", "dom_hash": "abc123xyz", "url": "/cart"},
-    {"session_id": "sess1", "user_id": "user1", "dom_hash": "def456uvw", "url": "/checkout"},
-    {"session_id": "sess1", "user_id": "user1", "dom_hash": "ghi789rst", "url": "/confirmation"},
-
-    {"session_id": "sess2", "user_id": "user1", "dom_hash": "other_hash", "url": "/confirmation"},
-    {"session_id": "sess2", "user_id": "user1", "dom_hash": "abc123xyz", "url": "/cart"},
-    {"session_id": "sess2", "user_id": "user1", "dom_hash": "other_hash", "url": "/checkout"},
-    {"session_id": "sess2", "user_id": "user1", "dom_hash": "ghi789rst", "url": "/confirmation"},
-
-    {"session_id": "sess3", "user_id": "user1", "dom_hash": "abc123xyz", "url": "/cart"},
-    {"session_id": "sess3", "user_id": "user1", "dom_hash": "def456uvw", "url": "/checkout"},
-    {"session_id": "sess3", "user_id": "user1", "dom_hash": "other_hash1", "url": "/checkout"},
-
-    {"session_id": "sess4", "user_id": "user2", "dom_hash": "abc123xyz", "url": "/cart"},
-    {"session_id": "sess4", "user_id": "user2", "dom_hash": "def456uvw", "url": "/checkout"},
-    {"session_id": "sess4", "user_id": "user2", "dom_hash": "other_hash1", "url": "/checkout"},
-
-    {"session_id": "sess5", "user_id": "user3", "dom_hash": "abc123xyz", "url": "/cart"},
-    {"session_id": "sess5", "user_id": "user3", "dom_hash": "def456uvw", "url": "/checkout"},
-    {"session_id": "sess5", "user_id": "user3", "dom_hash": "other_hash1", "url": "/checkout"},
+steps_mock = [
+    {
+        "session_id": "1",
+        "user_id": "user1",
+        "status": "success",
+        "events": {
+            "/": [
+                "//button[contains(., 'Import listings')]"
+            ],
+            "lite/airbnb/connect": [
+                "//button[contains(., 'First, connect to Airbnb')]"
+            ],
+            "lite/airbnb/select": [
+                "//button[contains(., 'Import your listings')]"
+            ]
+        }
+    },
+    {
+        "session_id": "2",
+        "user_id": "user2",
+        "status": "indirect_success",
+        "events": {
+            "/": [
+                "//button[contains(., 'Import listings')]"
+            ],
+            "lite/airbnb/connect": [
+                "//button[contains(., 'First, connect to Airbnb')]",
+                "//button[contains(., 'abc')]"  # Unexpected step
+            ],
+            "lite/airbnb/select": [
+                "//button[contains(., 'Import your listings')]"
+            ]
+        }
+    },
+    {
+        "session_id": "3",
+        "user_id": "user3",
+        "status": "indirect_success",
+        "events": {
+            "/": [
+                "//button[contains(., 'Import listings')]"
+            ],
+            "lite/airbnb/connect": [
+                "//button[contains(., 'First, connect to Airbnb')]",
+                "//button[contains(., 'abc')]",  # Unexpected step
+                "//button[contains(., '123')]"   # Unexpected step
+            ],
+            "lite/airbnb/select": [
+                "//button[contains(., 'Import your listings')]"
+            ]
+        }
+    },
+    {
+        "session_id": "4",
+        "user_id": "user4",
+        "status": "failed",
+        "events": {
+            "/": [
+                "//button[contains(., 'Import listings')]"
+            ],
+            "lite/airbnb/connect": [
+                "//button[contains(., 'First, connect to Airbnb')]",
+                "//button[contains(., 'abc')]"  # Unexpected step
+            ],
+            "lite/airbnb/select": [
+                "//button[contains(., 'Import your listings')]"
+            ]
+        }
+    }
 ]
 
-# Mock data for DOM elements
-dom_elements_mock = [
-    {"dom_hash": "abc123xyz", "tag_name": "BUTTON", "inner_text": "Add to Cart"},
-    {"dom_hash": "def456uvw", "tag_name": "BUTTON", "inner_text": "Checkout"},
-    {"dom_hash": "ghi789rst", "tag_name": "BUTTON", "inner_text": "Confirm Purchase"},
-    {"dom_hash": "other_hash", "tag_name": "DIV", "inner_text": "Other Element"},
-]
 
-def categorize_paths(events, ideal_path):
+def categorize_paths(steps_mock, ideal_journey):
     """
     Categorizes paths into success, indirect success, and failed journeys.
     """
@@ -56,97 +91,47 @@ def categorize_paths(events, ideal_path):
     failed = []
 
     # Group events by session_id
-    sessions = {}
-    for event in events:
-        if event["session_id"] not in sessions:
-            sessions[event["session_id"]] = []
-        sessions[event["session_id"]].append(event["dom_hash"])
+    for step in steps_mock:
+        session_id = step["session_id"]
 
-    # Compare session paths to the ideal path
-    for session_id, session_events in sessions.items():
-        if session_events == ideal_path:
+        if step["status"] == "success":
             success.append(session_id)
-        elif set(session_events).issuperset(ideal_path):
+        elif step["status"] == "indirect_success":
             indirect_success.append(session_id)
         else:
             failed.append(session_id)
 
     return success, indirect_success, failed
 
-
-def group_paths(paths):
+def check_indirect_success(session_xpaths, ideal_xpaths):
     """
-    Groups paths by their occurrences and returns the counts.
+    Helper function to check if the session xpaths contain the ideal journey's xpaths
+    in the correct order, with possible extra events in between.
     """
-    path_counts = Counter(tuple(path) for path in paths)
-    return [{"path": list(path), "count": count} for path, count in path_counts.items()]
-
+    ideal_index = 0
+    for xpath in session_xpaths:
+        if ideal_index < len(ideal_xpaths) and xpath == ideal_xpaths[ideal_index]:
+            ideal_index += 1
+        if ideal_index == len(ideal_xpaths):
+            return True
+    return False
 
 @indirect_paths_blueprint.route("/", methods=["GET"])
 def get_indirect_success_paths():
     """
     API endpoint that returns indirect success paths using mock data.
     """
-    # Extract the ideal path (sequence of dom_hashes) from the mock journey
-    ideal_path = [step["dom_hash"] for step in journey_mock["steps"]]
-
-    # Categorize paths into indirect success paths
-    _, indirect_success_paths, _ = categorize_paths(events_mock, ideal_path)
-
-    # Group paths by occurrences and count them
-    grouped_paths = group_paths(indirect_success_paths)
+    success, indirect_success, _ = categorize_paths(steps_mock, ideal_journey)
 
     # Return the result as JSON
-    return jsonify(grouped_paths)
-
-
-@indirect_paths_blueprint.route("/hidden-steps", methods=["GET"])
-def get_hidden_steps():
-    """
-    API endpoint that returns hidden steps and their counts using mock data.
-    """
-    # Count occurrences of hidden steps
-    hidden_steps_counts = Counter(
-        event["dom_hash"] for event in events_mock if event["dom_hash"] not in {step["dom_hash"] for step in journey_mock["steps"]}
-    )
-
-    # Return the result as JSON
-    return jsonify(
-        [{"dom_hash": dom_hash, "count": count} for dom_hash, count in hidden_steps_counts.items()]
-    )
-
-
-@indirect_paths_blueprint.route("/hidden-steps/contribution", methods=["GET"])
-def get_hidden_steps_contribution():
-    """
-    API endpoint that calculates the relative contribution of hidden steps.
-    """
-    # Count occurrences of hidden steps
-    hidden_steps_counts = Counter(
-        event["dom_hash"] for event in events_mock if event["dom_hash"] not in {step["dom_hash"] for step in journey_mock["steps"]}
-    )
-    total_hidden_steps = sum(hidden_steps_counts.values())
-
-    # Calculate relative contribution
-    contributions = [
-        {"dom_hash": dom_hash, "contribution": count / total_hidden_steps * 100}
-        for dom_hash, count in hidden_steps_counts.items()
-    ]
-
-    # Return the result as JSON
-    return jsonify(contributions)
-
+    return jsonify({"indirect_success_count": len(indirect_success)})
 
 @indirect_paths_blueprint.route("/summary", methods=["GET"])
 def get_summary():
     """
     API endpoint that returns the counts of success, indirect success, and failed journeys.
     """
-    # Extract the ideal path (sequence of dom_hashes) from the mock journey
-    ideal_path = [step["dom_hash"] for step in journey_mock["steps"]]
-
-    # Categorize paths
-    success, indirect_success, failed = categorize_paths(events_mock, ideal_path)
+    success, indirect_success, failed = categorize_paths(steps_mock, ideal_journey)
 
     # Return counts as JSON
     return jsonify(
@@ -156,3 +141,33 @@ def get_summary():
             "failed_count": len(failed),
         }
     )
+
+@indirect_paths_blueprint.route("/hidden-steps", methods=["GET"])
+def get_hidden_steps():
+    """
+    API endpoint that returns hidden steps and their counts for sessions marked as indirect_success.
+    """
+    # Flatten the (url, xpath) pairs from the ideal journey
+    ideal_steps = {(url, xpath) for url, xpaths in ideal_journey.items() for xpath in xpaths}
+
+    # Dictionary to count hidden steps
+    hidden_steps_counts = Counter()
+
+    # Loop through all steps in the mock data and filter for indirect_success
+    for step in steps_mock:
+        if step["status"] == "indirect_success":
+            for event in step["events"]:
+                url = event["url"]
+                # Ensure xpaths is always a list
+                xpaths = event["xpaths"] if isinstance(event["xpaths"], list) else [event["xpaths"]]
+
+                for xpath in xpaths:
+                    # Check if (url, xpath) is not in the ideal journey (hidden step)
+                    if (url, xpath) not in ideal_steps:
+                        hidden_steps_counts[(url, xpath)] += 1
+
+    # Return the hidden steps and their frequency
+    return jsonify(
+        [{"url": url, "xpath": xpath, "count": count} for (url, xpath), count in hidden_steps_counts.items()]
+    )
+

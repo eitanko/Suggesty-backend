@@ -2,7 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from db import db
 from config import Config
-from routes import journey_blueprint, step_blueprint, event_blueprint, indirect_paths_blueprint
+from routes import journey_blueprint, step_blueprint, event_blueprint, paths_blueprint
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -11,7 +11,9 @@ app.config.from_object(Config)
 # Enable CORS
 CORS(app, resources={r"/api/*": {"origins": [
         "chrome-extension://killleidajemobjblfojagljbfcgmcjg",
-        "chrome-extension://gngngnjepafimnjjhcinddkehmhadoip"
+        "chrome-extension://gngngnjepafimnjjhcinddkehmhadoip",
+        "chrome-extension://pnicmjaflanjdioaonfnhkmppehbdnbn",
+        "http://localhost:3000"
     ]}})
 
 # Initialize extensions
@@ -21,7 +23,7 @@ db.init_app(app)
 app.register_blueprint(journey_blueprint, url_prefix='/api/journey')
 app.register_blueprint(step_blueprint, url_prefix='/api/step')
 app.register_blueprint(event_blueprint, url_prefix='/api/event')
-app.register_blueprint(indirect_paths_blueprint, url_prefix='/api/indirect_success_paths')
+app.register_blueprint(paths_blueprint, url_prefix='/api/paths')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

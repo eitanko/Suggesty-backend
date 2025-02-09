@@ -75,3 +75,47 @@ def save_step():
         print(f"Error saving step: {str(e)}")  # Log the error
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 🔹 GET: Fetch steps for a given URL
+@step_blueprint.route('/get_steps_by_url', methods=['GET'])
+def get_steps_by_url():
+    url = request.args.get("url")
+
+    if not url:
+        return jsonify({"error": "Missing 'url' parameter"}), 400
+
+    steps = Step.query.filter_by(url=url).order_by(Step.index).all()
+
+    steps_data = [
+        {
+            "id": step.id,
+            "journey_id": step.journey_id,
+            "event_type": step.event_type,
+            "element": step.element,
+            "screen_path": step.screen_path,
+            "index": step.index
+        }
+        for step in steps
+    ]
+
+    return jsonify({"steps": steps_data})
+
+
+# 🔹 GET: Fetch the final step of a given journey
+@step_blueprint.route('/final_step', methods=['GET'])
+def get_final_step():
+    journey_id = request.args.get("journeyId")
+
+    if not journey_id:
+        return jsonify({"error": "Missing 'journeyId' parameter"}), 400
+
+    # Fetch the last step of the journey, ordered by creation time (assuming `createdAt` exists)
+    final_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at.desc()).first()
+
+    if final_step:
+        return jsonify({
+            "event_type":final_step.event_type,
+            "element": final_step.element,
+            "url": final_step.url
+        })
+    else:
+        return jsonify({"error": "No steps found for this journey"}), 404

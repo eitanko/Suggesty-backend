@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from db import db
 from models.journey import Journey
+from models.step import Step
 
 journey_blueprint = Blueprint('journey', __name__)
 
@@ -46,3 +47,37 @@ def get_journey_id():
         return jsonify({"id": journey.id})
     else:
         return jsonify({"error": "Journey not found"}), 404
+
+# 🔹 GET: Fetch journey ID & steps for the given URL
+@journey_blueprint.route('/get_journey', methods=['GET'])
+def get_journey():
+    start_url = request.args.get("url")
+
+    if not start_url:
+        return jsonify({"error": "Missing 'url' parameter"}), 400
+
+    journey = Journey.query.filter_by(startUrl=start_url).first()
+
+    if journey:
+        # Fetch all steps related to this journey and URL
+        steps = Step.query.filter_by(journey_id=journey.id, url=start_url).order_by(Step.index).all()
+
+        steps_data = [
+            {
+                "event_type": step.event_type,
+                "element": step.element
+            }
+            for step in steps
+        ]
+
+        return jsonify({
+            "id": journey.id,
+            "steps": steps_data
+        })
+
+    # If no journey exists for this URL, return None instead of a 404
+    return jsonify({
+        "id": None,
+        "steps": []
+    })
+

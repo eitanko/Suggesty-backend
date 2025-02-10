@@ -13,7 +13,7 @@ class Step(db.Model):
     index = db.Column(db.Integer, nullable=False)
     created_at = db.Column("createdAt", db.DateTime)
 
-    def __init__(self, journey_id, url, event_type, element, screenshot_url, index):
+    def __init__(self, journey_id, url, event_type, element, screen_path, index):
         self.journey_id = journey_id
         self.url = url
         self.event_type = event_type

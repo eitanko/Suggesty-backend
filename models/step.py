@@ -1,6 +1,5 @@
 #from flask_sqlalchemy import SQLAlchemy
 from db import db
-from datetime import datetime
 
 class Step(db.Model):
     __tablename__ = "Step"

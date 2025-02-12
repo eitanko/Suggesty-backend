@@ -203,6 +203,17 @@ funnel_mock = [
             "lite/airbnb/connect": [{"xpath": "abcd", "timestamp": 1700000025}]
         }
     },
+    {
+        "session_id": "4",
+        "user_id": "user4",
+        "status": "failed",
+        "events": {
+            "/": [{"xpath": "Import listings", "timestamp": 1700000005}],
+            "lite/airbnb/connect": [{"xpath": "First, connect to Airbnb", "timestamp": 1700000025}],
+            "lite/airbnb/connect2": [{"xpath": "Drop", "timestamp": 1700000095}]
+
+        }
+    },
 ]
 
 def categorize_paths(steps_mock, ideal_journey):

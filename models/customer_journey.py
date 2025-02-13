@@ -1,10 +1,9 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from enum import Enum
-
-# Initialize SQLAlchemy
-db = SQLAlchemy()
+from db import db
 
 # Step 1: Define the Enum class for JourneyStatus
 class JourneyStatusEnum(Enum):
@@ -18,6 +17,7 @@ class Person(db.Model):
     __tablename__ = "Person"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
     name = db.Column("name", db.String(255), nullable=True)
     email = db.Column("email", db.String(255), unique=True, nullable=True)
     role = db.Column("role", db.String(100), nullable=True)
@@ -26,41 +26,27 @@ class Person(db.Model):
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
 
-    sessions = db.relationship("CustomerSession", backref="person", lazy=True)
-
-
 class CustomerSession(db.Model):
     __tablename__ = "CustomerSession"
-
+#
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    person_id = db.Column("personId", UUID(as_uuid=True), db.ForeignKey("Person.uuid"), nullable=False)
+    # journey_id = db.Column(db.Integer, db.ForeignKey("customer_journey.id"), nullable=True)  # Allow None for when there's no journey
     session_id = db.Column("sessionId", db.String(255), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     ip_address = db.Column("ipAddress", db.String(50), nullable=True)
     user_agent = db.Column("userAgent", db.String(255), nullable=True)
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
     end_time = db.Column("endTime", db.DateTime, nullable=True)
     api_key = db.Column("apiKey", db.String(255), nullable=False)
+    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
-
-    person_id = db.Column("personId", db.Integer, db.ForeignKey("Person.id"), nullable=False)
-
-
-# ✅ Ensure that Journey exists before CustomerJourney references it
-class Journey(db.Model):
-    __tablename__ = "Journey"
-
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column("name", db.String(255), nullable=False)
-    description = db.Column("description", db.String(500), nullable=True)
-
-    customer_journeys = db.relationship("CustomerJourney", back_populates="journey")
 
 
 class CustomerJourney(db.Model):
     __tablename__ = "CustomerJourney"
-
+    session_id = db.Column("sessionId", db.String(255), nullable=False)
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column("userId", db.Integer, db.ForeignKey("Person.id"), nullable=False)
     journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
     status = db.Column("status", db.Enum(JourneyStatusEnum), nullable=False, default=JourneyStatusEnum.IN_PROGRESS)
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
@@ -70,27 +56,35 @@ class CustomerJourney(db.Model):
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
 
-    journey = db.relationship("Journey", back_populates="customer_journeys")  # Corrected backref
+    # journey = db.relationship("Journey", back_populates="customer_journey")
     events = db.relationship("Event", back_populates="customer_journey")
+
+    def __init__(self, journey_id, session_id, last_step=None):
+        self.journey_id = journey_id
+        self.session_id = session_id
+        self.last_step = last_step
 
 
 class Event(db.Model):
     __tablename__ = "Event"
 
     id = db.Column(db.Integer, primary_key=True)
+    person_id = db.Column("personId", UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)  # Update to the correct column name
     session_id = db.Column("sessionId", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     url = db.Column(db.String(255), nullable=False)
     element = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=True)
+
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, element, customer_journey_id=None, timestamp=None):
+    def __init__(self, session_id, event_type, url, element, customer_journey_id=None, timestamp=None, person_id=None):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
         self.element = element
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
+        self.person_id = person_id
+

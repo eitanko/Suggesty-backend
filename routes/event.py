@@ -1,5 +1,4 @@
 from models.customer_journey import Event
-
 from flask import Blueprint, request, jsonify
 from db import db
 
@@ -20,6 +19,7 @@ def create_event():
     - url (str): The URL where the event occurred.
     - element (str): The UI element associated with the event (e.g., button, link, etc.).
     - customerJourneyId (int): The ID of the associated customer journey. This links the event to a specific customer journey.
+    - uuid (str): The unique identifier for the event (optional if you want to provide one).
 
     Response:
     - 201 Created: Event successfully recorded.
@@ -34,6 +34,8 @@ def create_event():
         "url": "https://example.com/page",
         "element": "#submit-button",
         "customerJourneyId": 42
+        "uuid": "a13b2c47-e89b-12d3-a456-426614174123"  # Optional: provide a custom UUID
+
     }
     ```
 
@@ -55,6 +57,8 @@ def create_event():
     url = data.get("url")
     element = data.get("element")
     customer_journey_id = data.get("customerJourneyId")
+    uuid = data.get("uuid")
+
 
     # Validate required fields
     if not all([session_id, event_type, url, element]):
@@ -66,7 +70,8 @@ def create_event():
         event_type=event_type,
         url=url,
         element=element,
-        customer_journey_id = customer_journey_id
+        customer_journey_id = customer_journey_id,
+        person_id=uuid,
 
     )
     db.session.add(new_event)

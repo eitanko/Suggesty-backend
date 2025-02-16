@@ -1,17 +1,30 @@
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from enum import Enum
 from db import db
+from datetime import datetime
 
-# Step 1: Define the Enum class for JourneyStatus
-class JourneyStatusEnum(Enum):
-    IN_PROGRESS = "in-progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+class Step(db.Model):
+    __tablename__ = "Step"
 
-# Step 2: Models with Enum Integration
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
+    url = db.Column(db.String(255), nullable=False)
+    event_type = db.Column("eventType", db.String(50), nullable=False)
+    element = db.Column(db.String(50), nullable=False)
+    screen_path = db.Column("screenPath", db.String(255))
+    index = db.Column(db.Integer, nullable=False)
+    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
+
+    journey = db.relationship("Journey", back_populates="steps")
+
+    def __init__(self, journey_id, url, event_type, element, screen_path, index):
+        self.journey_id = journey_id
+        self.url = url
+        self.event_type = event_type
+        self.element = element
+        self.screen_path = screen_path
+        self.index = index
 
 class Person(db.Model):
     __tablename__ = "Person"
@@ -26,28 +39,43 @@ class Person(db.Model):
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
 
-class CustomerSession(db.Model):
-    __tablename__ = "CustomerSession"
-#
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    person_id = db.Column("personId", UUID(as_uuid=True), db.ForeignKey("Person.uuid"), nullable=False)
-    # journey_id = db.Column(db.Integer, db.ForeignKey("customer_journey.id"), nullable=True)  # Allow None for when there's no journey
-    session_id = db.Column("sessionId", db.String(255), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
-    ip_address = db.Column("ipAddress", db.String(50), nullable=True)
-    user_agent = db.Column("userAgent", db.String(255), nullable=True)
-    start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
-    end_time = db.Column("endTime", db.DateTime, nullable=True)
-    api_key = db.Column("apiKey", db.String(255), nullable=False)
-    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
-    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
-                           onupdate=db.func.current_timestamp())
+    sessions = db.relationship("CustomerSession", backref="person", lazy=True)
+    customer_journeys = db.relationship("CustomerJourney", back_populates="person")  # Add back relationship
 
+    # Relationships
+    journeys = db.relationship("CustomerJourney", back_populates="person", overlaps="customer_journeys")  # Add overlaps here
+
+# Define the Enum class for JourneyStatus
+class JourneyStatusEnum(Enum):
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+class Journey(db.Model):
+    __tablename__ = "Journey"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String, nullable=False)
+    description = db.Column(db.String, nullable=True)
+    user_id = db.Column("userId", db.Integer, nullable=False)
+    created_At = db.Column("createdAt", db.DateTime, default=db.func.now())
+    start_url = db.Column("startUrl", db.String(255), unique=True, nullable=False)
+
+    steps = db.relationship('Step', back_populates='journey', cascade="all, delete-orphan")
+    customer_journeys = db.relationship("CustomerJourney", back_populates="journey")
 
 class CustomerJourney(db.Model):
     __tablename__ = "CustomerJourney"
-    session_id = db.Column("sessionId", db.String(255), nullable=False)
+
+    # Primary key
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+
+    # Foreign keys and relationships
+    session_id = db.Column("sessionId", db.String(255), nullable=False)
     journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
+    person_id = db.Column("personId", db.String(36), db.ForeignKey("Person.uuid"), nullable=False)  # ForeignKey linking to Person.uuid
+
+    # Attributes
     status = db.Column("status", db.Enum(JourneyStatusEnum), nullable=False, default=JourneyStatusEnum.IN_PROGRESS)
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
     end_time = db.Column("endTime", db.DateTime, nullable=True)
@@ -56,14 +84,32 @@ class CustomerJourney(db.Model):
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
 
-    # journey = db.relationship("Journey", back_populates="customer_journey")
+    # Relationships
+    journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
+    person = db.relationship("Person", back_populates="customer_journeys")
 
-    def __init__(self, journey_id, session_id, last_step=None):
+    def __init__(self, journey_id, session_id, person_id, status, last_step=None):
         self.journey_id = journey_id
         self.session_id = session_id
+        self.person_id = person_id
         self.last_step = last_step
+        self.status = status
 
+class CustomerSession(db.Model):
+    __tablename__ = "CustomerSession"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    session_id = db.Column("sessionId", db.String(255), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    ip_address = db.Column("ipAddress", db.String(50), nullable=True)
+    user_agent = db.Column("userAgent", db.String(255), nullable=True)
+    start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
+    end_time = db.Column("endTime", db.DateTime, nullable=True)
+    api_key = db.Column("apiKey", db.String(255), nullable=False)
+    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
+                           onupdate=db.func.current_timestamp())
+    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
+    person_id = db.Column("personId", UUID(as_uuid=True), db.ForeignKey("Person.uuid"), nullable=False)
 
 class Event(db.Model):
     __tablename__ = "Event"
@@ -75,7 +121,7 @@ class Event(db.Model):
     url = db.Column(db.String(255), nullable=False)
     element = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=True)
+    customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=False)
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 

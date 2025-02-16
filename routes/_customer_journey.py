@@ -1,4 +1,4 @@
-from models.customer_journey import CustomerJourney
+from models import CustomerJourney
 from flask import Blueprint, request, jsonify
 from db import db
 
@@ -81,7 +81,6 @@ def update_status(cjid):
     }
     """
     data = request.get_json()
-
     new_status = data.get("status")
 
     if not new_status:

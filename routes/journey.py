@@ -1,11 +1,11 @@
-from models.journey import Journey
 from flask import Blueprint, request, jsonify
 import boto3
 import base64
 from uuid import uuid4
 from config import Config  # Import the centralized configuration
+from models import Journey
+from models import Step
 from db import db
-from models.step import Step
 
 journey_blueprint = Blueprint('journey', __name__)
 
@@ -150,16 +150,12 @@ def get_journey_by_url():
         "steps": []
     })
 
-
-# 🔹 Save a step: Saves a step in the journey with optional screenshot upload
-
 # Initialize S3 client
 s3_client = boto3.client(
     's3',
     aws_access_key_id=Config.AWS_ACCESS_KEY,
     aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY
 )
-
 # Configuration
 BUCKET_NAME = Config.S3_BUCKET_NAME
 

@@ -1,5 +1,8 @@
-from flask_sqlalchemy import SQLAlchemy
-db = SQLAlchemy()
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
+#from models import Person
+from db import db
+
 
 class CustomerSession(db.Model):
     __tablename__ = "CustomerSession"
@@ -13,5 +16,4 @@ class CustomerSession(db.Model):
     api_key = db.Column("apiKey", db.String(255), nullable=False)
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
                            onupdate=db.func.current_timestamp())
-
-    person_id = db.Column("personId", db.Integer, db.ForeignKey("Person.id"), nullable=False)
+    person_id = db.Column("personId", UUID(as_uuid=True), db.ForeignKey("Person.uuid"), nullable=False)

@@ -59,7 +59,8 @@ class Journey(db.Model):
     description = db.Column(db.String, nullable=True)
     user_id = db.Column("userId", db.Integer, nullable=False)
     created_At = db.Column("createdAt", db.DateTime, default=db.func.now())
-    start_url = db.Column("startUrl", db.String(255), unique=True, nullable=False)
+    start_url = db.Column("startUrl", db.String(255), nullable=False)
+    last_step = db.Column("lastStep", db.String, nullable=True)
 
     steps = db.relationship('Step', back_populates='journey', cascade="all, delete-orphan")
     customer_journeys = db.relationship("CustomerJourney", back_populates="journey")

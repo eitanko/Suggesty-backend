@@ -7,6 +7,8 @@ from routes import journey_blueprint, event_blueprint, paths_blueprint, customer
 # Initialize Flask app
 app = Flask(__name__)
 app.config.from_object(Config)
+# Set a secret key for session encryption
+app.secret_key = 'eGSDKSLSEAwoCdecTqZ0ewP8W5j5vkXO'
 
 # Enable CORS
 CORS(app, resources={r"/api/*": {"origins": [

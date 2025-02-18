@@ -1,5 +1,5 @@
 from models.customer_journey import Person, CustomerJourney, JourneyStatusEnum, Event, Journey, CustomerSession, Step
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from db import db
 from datetime import datetime
 import json
@@ -37,19 +37,61 @@ def track_event():
 
     # Retrieve the person and session
     person = Person.query.filter_by(uuid=person_id).first()
-    session = CustomerSession.query.filter_by(session_id=session_id).first()
+    customer_session = CustomerSession.query.filter_by(session_id=session_id).first()
 
-    if not person or not session:
-        print("❌ Person or session not found")
-        return jsonify({"error": "Person or session not found"}), 404
+    if not person or not customer_session:
+        print("❌ Person or customer_session not found")
+        return jsonify({"error": "Person or customer_session not found"}), 404
 
-    print(f"✅ Found Person: {person}, Found Session: {session}")
+    print(f"✅ Found Person: {person}, Found customer_session: {customer_session}")
 
     # Check if there is an ongoing journey (status = "IN_PROGRESS")
     ongoing_journey = CustomerJourney.query.filter_by(person_id=person.uuid, status="IN_PROGRESS").first()
 
     if ongoing_journey:
         print(f"✅ Ongoing journey found: {ongoing_journey.id}")
+
+        if 'last_step' not in session:
+            # Fetch last step details from the Journey table
+            print(f"Fetching last step for journey_id: {ongoing_journey.journey_id}")
+
+            journey = Journey.query.filter_by(id=ongoing_journey.journey_id).first()
+            if journey:
+                print(f"Journey found: {journey.id}, Last step: {journey.last_step}")
+                if journey.last_step:
+                    session['last_step'] = journey.last_step  # Store JSON string in session
+                    print(f"Stored last step in session: {session['last_step']}")
+                else:
+                    print("No last step found in journey record")
+            else:
+                print("No journey found with this ID")
+
+        # Load last step from session
+        last_step_data = json.loads(session['last_step']) if 'last_step' in session else None
+        print(f"Loaded last step from session: {last_step_data}")
+
+        # Compare current event with the last step
+        if last_step_data:
+            last_url = last_step_data.get("url")
+            last_xpath = last_step_data.get("elementDetails", {}).get("xpath")
+
+            print(
+                f"Comparing current event:\n- URL: {current_url}\n- Xpath: {xpath}")
+            print(f"With last step:\n- URL: {last_url}\n- Xpath: {last_xpath}")
+
+            if current_url == last_url and xpath == last_xpath:
+                # Mark journey as completed
+                print("Match found! Marking journey as COMPLETED")
+                ongoing_journey.status = "COMPLETED"
+                ongoing_journey.completed_at = datetime.utcnow()
+                db.session.commit()
+
+                print(f"Journey {ongoing_journey.id} marked as COMPLETED at {ongoing_journey.completed_at}")
+                return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 200
+            else:
+                print("No match found, journey remains IN_PROGRESS")
+        else:
+            print("No last step data available for comparison")
 
         element_str = json.dumps(element) if isinstance(element, dict) else element
 

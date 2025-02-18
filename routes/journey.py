@@ -3,12 +3,11 @@ import boto3
 import base64
 from uuid import uuid4
 from config import Config  # Import the centralized configuration
-from models import Journey
-from models import Step
+from models import Journey, Step
 from db import db
+import json
 
 journey_blueprint = Blueprint('journey', __name__)
-
 
 
 # 🔹 Create New Journey - Creates a new journey in the system
@@ -85,8 +84,6 @@ def add_journey():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to add journey', 'message': str(e)}), 500
-
-
 
 # 🔹 Get Journey Steps: Retrieves a journey and its steps based on the given start URL
 @journey_blueprint.route('/', methods=['GET'])
@@ -181,7 +178,7 @@ def upload_to_s3(file_data, file_name, bucket_name):
     except Exception as e:
         raise Exception(f"Failed to upload to S3: {str(e)}")
 
-
+# 🔹
 @journey_blueprint.route('/<int:journey_id>/step', methods=['POST', 'OPTIONS'])
 def save_step(journey_id):
     """
@@ -292,4 +289,71 @@ def get_final_step(journey_id):
         })
     else:
         return jsonify({"error": "No steps found for this journey"}), 404
+
+# 🔹 Save First & Last Step for Journey
+@journey_blueprint.route('/<int:journey_id>/save', methods=['POST'])
+def save_journey_first_last_step(journey_id):
+    try:
+        print(f"🔹 Fetching steps for journey_id: {journey_id}")  # Debug log
+
+        # Fetch all steps for the given journey, ordered by creation time
+        steps = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at).all()
+
+        if not steps:
+            print(f"❌ No steps found for journey_id: {journey_id}")  # Debug log
+            return jsonify({"error": "No steps found for this journey"}), 404
+
+        print(f"✅ Retrieved {len(steps)} steps for journey_id: {journey_id}")  # Debug log
+
+        # Get the first and last step
+        start_step = steps[0]
+        last_step = steps[-1]
+
+        print(f"🔹 First step URL: {start_step.url}")  # Debug log
+
+        # Extract required fields
+        first_url = start_step.url
+
+        # Parse the JSON string stored in last_step.element
+        element_data = json.loads(last_step.element) if last_step.element else {}
+        # Extract eventType and xpath from the JSON object
+        event_type = element_data.get("eventType", "")
+        xpath = element_data.get("xpath", "")
+
+        # Create the last_step_data structure
+        last_step_data = {
+            "url": last_step.url,
+            "elementDetails": {
+                "eventType": event_type,
+                "xpath": xpath
+            }
+        }
+
+        print(f"🔹 Last step data: {last_step_data}")  # Debug log
+
+        # Update the Journey table
+        print(f"🔹 Fetching journey record for journey_id: {journey_id}")  # Debug log
+        journey = Journey.query.filter_by(id=journey_id).first()
+
+        if not journey:
+            print(f"❌ Journey not found for journey_id: {journey_id}")  # Debug log
+            return jsonify({"error": "Journey not found"}), 404
+
+        print(f"✅ Journey found for journey_id: {journey_id}, updating fields...")  # Debug log
+
+        journey.start_url = first_url
+        journey.last_step = json.dumps(last_step_data)  # ✅ Store as JSON string
+        db.session.commit()
+        print(f"✅ Journey updated successfully for journey_id: {journey_id}")  # Debug log
+
+        return jsonify({
+            "message": "Journey updated successfully",
+            "journeyId": journey_id,
+            "startUrl": first_url,
+            "lastStep": last_step_data
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Exception occurred: {str(e)}")  # Debug log
+        return jsonify({"error": str(e)}), 500
 

@@ -15,6 +15,8 @@ CORS(app, resources={r"/api/*": {"origins": [
         "chrome-extension://killleidajemobjblfojagljbfcgmcjg",
         "chrome-extension://gngngnjepafimnjjhcinddkehmhadoip",
         "chrome-extension://pnicmjaflanjdioaonfnhkmppehbdnbn",
+        "chrome-extension://cicpidbfkidjhapfmdalgmjfcfakannj",
+        "chrome-extension://ahjlajlgngnfgbbjaihmnkhekaeoabib",
         "http://localhost:3000",
         "https://ux-app-analytics.onrender.com"
 

@@ -87,6 +87,22 @@ def track_event():
                 db.session.commit()
 
                 print(f"Journey {ongoing_journey.id} marked as COMPLETED at {ongoing_journey.completed_at}")
+
+                # Insert a final "completion" event when the journey is completed
+                element_str = json.dumps(element) if isinstance(element, dict) else element
+                final_event = Event(
+                    session_id=session_id,
+                    event_type=event_type,
+                    url=current_url,
+                    element=element_str,
+                    customer_journey_id=ongoing_journey.id,
+                    timestamp=datetime.utcnow(),
+                    person_id=person.uuid
+                )
+                db.session.add(final_event)
+                db.session.commit()
+
+                # Respond with journey completion
                 return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 200
             else:
                 print("No match found, journey remains IN_PROGRESS")

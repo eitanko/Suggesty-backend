@@ -5,6 +5,7 @@ from db import db
 from sqlalchemy.orm import joinedload
 from models import CustomerJourney, Event, Step
 import json
+from urllib.parse import urlparse
 
 paths_blueprint = Blueprint("paths", __name__)
 
@@ -17,6 +18,7 @@ paths_blueprint = Blueprint("paths", __name__)
 
 
 @paths_blueprint.route("/journey_data/<int:journey_id>", methods=["GET"])
+
 def get_journey_data(journey_id):
     # Fetch the ideal journey (steps)
     ideal_journey = db.session.query(Step).filter(Step.journey_id == journey_id).order_by(Step.created_at).all()
@@ -37,8 +39,15 @@ def get_journey_data(journey_id):
         element_data = json.loads(step.element)  # Parse the JSON string inside the 'element' field
         xpath = element_data.get("xpath")  # Access the 'xpath' field inside the parsed JSON
 
+        # Extract the base URL (protocol + domain) from the step.url
+        parsed_url = urlparse(step.url)
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Create the base URL using scheme and netloc
+
+        # Trim the base URL from the full URL, leaving only the relative path
+        trimmed_url = step.url.replace(base_url, "", 1)
+
         # Add the step to the ideal journey dictionary
-        ideal_journey_dict[step.url] = {
+        ideal_journey_dict[trimmed_url] = {
             "xpath": xpath,  # Use the extracted xpath from the element JSON
             "ideal_time": ideal_time
         }
@@ -63,11 +72,18 @@ def get_journey_data(journey_id):
             element_data = json.loads(event.element)  # Parse the JSON string inside the 'element' field
             xpath = element_data.get("xpath")  # Access the 'xpath' key inside the parsed JSON
 
-            if event.url not in events_dict:
-                events_dict[event.url] = []
+            # Extract the base URL (protocol + domain) from the event.url
+            parsed_url = urlparse(event.url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Create the base URL using scheme and netloc
+
+            # Trim the base URL from the full URL, leaving only the relative path
+            trimmed_url = event.url.replace(base_url, "", 1)
+
+            if trimmed_url not in events_dict:
+                events_dict[trimmed_url] = []
 
             # Append the parsed xpath and timestamp
-            events_dict[event.url].append({
+            events_dict[trimmed_url].append({
                 "xpath": xpath,  # Use the extracted xpath from the element JSON
                 "timestamp": event.timestamp.timestamp()
             })

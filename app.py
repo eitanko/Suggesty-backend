@@ -2,7 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from db import db
 from config import Config
-from routes import journey_blueprint, event_blueprint, paths_blueprint, customer_journey_blueprint,person_blueprint
+from routes import journey_blueprint, event_blueprint, paths_blueprint, customer_journey_blueprint,person_blueprint, utils_blueprint
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -31,6 +31,7 @@ app.register_blueprint(event_blueprint, url_prefix='/api/event')
 app.register_blueprint(paths_blueprint, url_prefix='/api/paths')
 app.register_blueprint(customer_journey_blueprint, url_prefix='/api/customer_journey')
 app.register_blueprint(person_blueprint, url_prefix='/api/person')
+app.register_blueprint(utils_blueprint, url_prefix='/api/utils')
 
 
 if __name__ == '__main__':

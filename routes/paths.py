@@ -1,6 +1,10 @@
 from flask import Blueprint, jsonify, request
 from collections import Counter, defaultdict
 import statistics
+from db import db
+from sqlalchemy.orm import joinedload
+from models import CustomerJourney, Event, Step
+import json
 
 paths_blueprint = Blueprint("paths", __name__)
 
@@ -10,6 +14,77 @@ paths_blueprint = Blueprint("paths", __name__)
 #     "lite/airbnb/connect": "//button[contains(., 'First, connect to Airbnb')]",
 #     "lite/airbnb/select": "//button[contains(., 'Import your listings')]"
 # }
+
+
+@paths_blueprint.route("/journey_data/<int:journey_id>", methods=["GET"])
+def get_journey_data(journey_id):
+    # Fetch the ideal journey (steps)
+    ideal_journey = db.session.query(Step).filter(Step.journey_id == journey_id).order_by(Step.created_at).all()
+
+    # Initialize a list to hold the ideal journey with computed ideal_time
+    ideal_journey_dict = {}
+    previous_time = None
+    for step in ideal_journey:
+        # If this is the first step, set ideal_time to 0
+        if previous_time is None:
+            ideal_time = 0
+        else:
+            # Calculate the time difference (in seconds) between consecutive steps
+            time_diff = step.created_at - previous_time
+            ideal_time = time_diff.total_seconds()  # Convert time difference to seconds
+
+        # Parse the step.element JSON and extract the xpath
+        element_data = json.loads(step.element)  # Parse the JSON string inside the 'element' field
+        xpath = element_data.get("xpath")  # Access the 'xpath' field inside the parsed JSON
+
+        # Add the step to the ideal journey dictionary
+        ideal_journey_dict[step.url] = {
+            "xpath": xpath,  # Use the extracted xpath from the element JSON
+            "ideal_time": ideal_time
+        }
+
+        # Update previous_time to the current step's created_at for the next iteration
+        previous_time = step.created_at
+
+    # Fetch user journeys related to the specific journey_id
+    user_journeys = (
+        db.session.query(CustomerJourney)
+        .options(joinedload(CustomerJourney.events))  # Efficient loading
+        .filter(CustomerJourney.journey_id == journey_id)
+        .all()
+    )
+
+    # Convert to JSON
+    user_journeys_list = []
+    for journey in user_journeys:
+        events_dict = {}
+        for event in journey.events:
+            # Parse the element field as a JSON object
+            element_data = json.loads(event.element)  # Parse the JSON string inside the 'element' field
+            xpath = element_data.get("xpath")  # Access the 'xpath' key inside the parsed JSON
+
+            if event.url not in events_dict:
+                events_dict[event.url] = []
+
+            # Append the parsed xpath and timestamp
+            events_dict[event.url].append({
+                "xpath": xpath,  # Use the extracted xpath from the element JSON
+                "timestamp": event.timestamp.timestamp()
+            })
+
+        user_journeys_list.append({
+            "journey_id": journey.id,
+            "session_id": journey.session_id,
+            "user_id": str(journey.person_id),
+            "status": journey.status.value,
+            "events": events_dict
+        })
+
+    # Return as JSON response
+    return jsonify({
+        "ideal_journey": ideal_journey_dict,
+        "user_journeys": user_journeys_list
+    })
 
 # Ideal journey structure with benchmark times (in seconds)
 ideal_journey = {
@@ -381,14 +456,24 @@ def analyze_timings():
         "total_anomalies": total_anomalies
     }
 
-@paths_blueprint.route("/build_funnel_tree", methods=["GET"])
-def build_funnel_tree():
 
-    journeyId = request.args.get("journeyId", default="default_value", type=str)
+@paths_blueprint.route("/build_funnel_tree/<int:journey_id>", methods=["GET"])
+def build_funnel_tree(journey_id):
+    # Fetch both the ideal journey and user journeys using get_journey_data function
+    response_data = get_journey_data(journey_id)
+
+    # Assuming get_journey_data returns a Flask Response object, we use .json() to parse it
+    response_json = response_data.get_json()
+
+    # Extract the 'ideal_journey' and 'user_journeys' from the response JSON
+    ideal_journey = response_json["ideal_journey"]
+    user_journeys = response_json["user_journeys"]
+
+    # Initialize the funnel tree structure
     tree = {
         "name": "1",  # Root node name
         "url": "/",
-        "xpath": "//button[contains(., 'Import listings')]",
+        "xpath": "",
         "count": 0,
         "avg_time": 0,
         "anomalies": [],
@@ -398,9 +483,9 @@ def build_funnel_tree():
     user_paths = []
 
     # Extract user paths
-    for session in funnel_mock:
-        session_id = session["session_id"]  # Use session_id as unique name
-        events = session["events"]
+    for journey in user_journeys:
+        session_id = journey["journey_id"]  # Assuming each journey has a unique session_id
+        events = journey["events"]
         path = []
         prev_timestamp = None
 

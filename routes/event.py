@@ -7,6 +7,39 @@ import json
 # Create a Blueprint for events
 event_blueprint = Blueprint('event', __name__)
 
+
+def insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, ongoing_journey=None,
+                                    new_journey=None):
+    """
+    Helper function to insert an event and update the customer journey's updatedAt timestamp.
+    This function will handle inserting both new events and marking the journey as completed.
+    """
+    element_str = json.dumps(element) if isinstance(element, dict) else element
+    event = Event(
+        session_id=session_id,
+        event_type=event_type,
+        url=current_url,
+        element=element_str,
+        customer_journey_id=(ongoing_journey.id if ongoing_journey else new_journey.id),
+        timestamp=datetime.utcnow(),
+        person_id=person_uuid
+    )
+    db.session.add(event)
+
+    # Update the `updatedAt` timestamp for the customer journey
+    if ongoing_journey:
+        ongoing_journey.updatedAt = datetime.utcnow()
+        db.session.commit()
+        print(f"✅ Event tracked for ongoing journey: {ongoing_journey.id}")
+    elif new_journey:
+        new_journey.updatedAt = datetime.utcnow()
+        db.session.commit()
+        print(f"✅ Event tracked for new journey: {new_journey.id}")
+
+    db.session.commit()
+    return event
+
+
 @event_blueprint.route("/track", methods=["POST"])
 def track_event():
     """
@@ -33,7 +66,8 @@ def track_event():
     element = data.get("element")
     xpath = element.get("xpath") if element else None
 
-    print(f"🔹 Extracted Values: Person ID: {person_id}, Session ID: {session_id}, URL: {current_url}, Event Type: {event_type}, XPath: {xpath}")
+    print(
+        f"🔹 Extracted Values: Person ID: {person_id}, Session ID: {session_id}, URL: {current_url}, Event Type: {event_type}, XPath: {xpath}")
 
     # Retrieve the person and session
     person = Person.query.filter_by(uuid=person_id).first()
@@ -89,18 +123,8 @@ def track_event():
                 print(f"Journey {ongoing_journey.id} marked as COMPLETED at {ongoing_journey.completed_at}")
 
                 # Insert a final "completion" event when the journey is completed
-                element_str = json.dumps(element) if isinstance(element, dict) else element
-                final_event = Event(
-                    session_id=session_id,
-                    event_type=event_type,
-                    url=current_url,
-                    element=element_str,
-                    customer_journey_id=ongoing_journey.id,
-                    timestamp=datetime.utcnow(),
-                    person_id=person.uuid
-                )
-                db.session.add(final_event)
-                db.session.commit()
+                insert_event_and_update_journey(session_id, event_type, current_url, element, person.uuid,
+                                                ongoing_journey=ongoing_journey)
 
                 # Respond with journey completion
                 return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 200
@@ -109,22 +133,9 @@ def track_event():
         else:
             print("No last step data available for comparison")
 
-        element_str = json.dumps(element) if isinstance(element, dict) else element
-
-        # If a journey is ongoing, insert the event with CJID
-        new_event = Event(
-            session_id=session_id,
-            event_type=event_type,
-            url=current_url,
-            element=element_str,
-            customer_journey_id=ongoing_journey.id,
-            timestamp=datetime.utcnow(),
-            person_id = person.uuid
-        )
-        db.session.add(new_event)
-        db.session.commit()
-
-        print(f"✅ Event tracked for ongoing journey: {ongoing_journey.id}")
+        # Insert event for ongoing journey
+        insert_event_and_update_journey(session_id, event_type, current_url, element, person.uuid,
+                                        ongoing_journey=ongoing_journey)
         return jsonify({"status": "Event tracked", "CJID": ongoing_journey.id}), 200
 
     print("🔹 No ongoing journey found. Looking for a journey start point...")
@@ -133,7 +144,6 @@ def track_event():
     first_step = Step.query.join(Journey).filter(
         Journey.start_url == current_url  # Ensure it's the valid journey start point
     ).order_by(Step.created_at).with_entities(Step, Journey.id).first()
-
 
     if first_step is None:
         print("ℹ️ No journey found for this URL. Skipping journey tracking.")
@@ -157,20 +167,10 @@ def track_event():
         db.session.commit()
 
         print(f"✅ New journey created with ID: {new_journey.id}")
-        # Ensure element is a JSON string if it's a dictionary
-        element_str = json.dumps(element) if isinstance(element, dict) else element
 
-        first_event = Event(
-            session_id=session_id,
-            event_type=event_type,
-            url=current_url,
-            element=element_str,
-            customer_journey_id=new_journey.id,
-            timestamp=datetime.utcnow(),
-            person_id = person.uuid
-        )
-        db.session.add(first_event)
-        db.session.commit()
+        # Insert the first event and update the journey's updatedAt timestamp
+        insert_event_and_update_journey(session_id, event_type, current_url, element, person.uuid,
+                                        new_journey=new_journey)
 
         print(f"✅ First event recorded for new journey: {new_journey.id}")
         return jsonify({"status": "New journey started and event tracked", "CJID": new_journey.id}), 201

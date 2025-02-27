@@ -3,7 +3,7 @@ import boto3
 import base64
 from uuid import uuid4
 from config import Config  # Import the centralized configuration
-from models import Journey, Step
+from models import Journey, Step, JourneyLiveStatus
 from db import db
 import json
 
@@ -356,4 +356,84 @@ def save_journey_first_last_step(journey_id):
     except Exception as e:
         print(f"❌ Exception occurred: {str(e)}")  # Debug log
         return jsonify({"error": str(e)}), 500
+
+@journey_blueprint.route('/<int:journey_id>/status', methods=['PUT'])
+def update_journey_status(journey_id):
+    """
+    PUT /journey/<journey_id>/status?status=<new_status>
+
+    This endpoint updates the status of a journey. it updates the start step and end step of the journey if the new status is ACTIVE.
+
+    Query Parameter:
+    - status (string): The new status to set for the journey. Must be one of ['DRAFT', 'ACTIVE', 'ARCHIVED'].
+
+    Success Response (200):
+    {
+        "message": "Journey status updated successfully",
+        "journeyId": 123,
+        "newStatus": "ACTIVE"
+    }
+
+    Error Response (400):
+    {
+        "error": "Invalid status value"
+    }
+
+    Error Response (404):
+    {
+        "error": "Journey not found"
+    }
+    """
+    new_status = request.args.get("status")
+
+    if new_status not in JourneyLiveStatus.__members__:
+        return jsonify({"error": "Invalid status value"}), 400
+
+    journey = Journey.query.filter_by(id=journey_id).first()
+
+    if not journey:
+        return jsonify({"error": "Journey not found"}), 404
+
+    if new_status == JourneyLiveStatus.ACTIVE.name:
+        first_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index).first()
+        last_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index.desc()).first()
+
+        if first_step:
+            first_step_data = {
+                "url": first_step.url,
+                "elementDetails": {
+                    "eventType": first_step.event_type,
+                    "xpath": json.loads(first_step.element).get("xpath")
+                }
+            }
+            journey.first_step = json.dumps(first_step_data)
+
+        if last_step:
+            last_step_data = {
+                "url": last_step.url,
+                "elementDetails": {
+                    "eventType": last_step.event_type,
+                    "xpath": json.loads(last_step.element).get("xpath")
+                }
+            }
+            journey.last_step = json.dumps(last_step_data)
+
+    journey.status = JourneyLiveStatus[new_status]
+    db.session.commit()
+
+    return jsonify({
+        "message": "Journey status updated successfully",
+        "journeyId": journey_id,
+        "newStatus": new_status
+    }), 200
+
+
+
+
+
+
+
+
+
+
 

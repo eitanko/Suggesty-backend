@@ -51,6 +51,13 @@ class JourneyStatusEnum(Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
+from enum import Enum
+
+class JourneyLiveStatus(Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
 class Journey(db.Model):
     __tablename__ = "Journey"
 
@@ -60,10 +67,14 @@ class Journey(db.Model):
     user_id = db.Column("userId", db.Integer, nullable=False)
     created_At = db.Column("createdAt", db.DateTime, default=db.func.now())
     start_url = db.Column("startUrl", db.String(255), nullable=False)
+    first_step = db.Column("firstStep", db.String, nullable=True)
     last_step = db.Column("lastStep", db.String, nullable=True)
+    status = db.Column(db.Enum(JourneyLiveStatus), default=JourneyLiveStatus.DRAFT, nullable=False)
 
     steps = db.relationship('Step', back_populates='journey', cascade="all, delete-orphan")
     customer_journeys = db.relationship("CustomerJourney", back_populates="journey")
+
+
 
 class CustomerJourney(db.Model):
     __tablename__ = "CustomerJourney"

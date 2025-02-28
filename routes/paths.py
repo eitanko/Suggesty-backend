@@ -1,24 +1,10 @@
-from flask import Blueprint, jsonify, request
-from collections import Counter, defaultdict
-import statistics
+from flask import Blueprint, jsonify
 from db import db
 from sqlalchemy.orm import joinedload
 from models import CustomerJourney, Event, Step
 import json
 from urllib.parse import urlparse
-
 paths_blueprint = Blueprint("paths", __name__)
-
-# Ideal journey structure
-# ideal_journey = {
-#     "/": "//button[contains(., 'Import listings')]",
-#     "lite/airbnb/connect": "//button[contains(., 'First, connect to Airbnb')]",
-#     "lite/airbnb/select": "//button[contains(., 'Import your listings')]"
-# }
-
-
-#@paths_blueprint.route("/journey_data/<int:journey_id>", methods=["GET"])
-
 
 # Ideal journey structure with benchmark times (in seconds)
 ideal_journey = {
@@ -230,7 +216,7 @@ def get_journey_data(journey_id):
     ideal_journey = db.session.query(Step).filter(Step.journey_id == journey_id).order_by(Step.created_at).all()
 
     # Initialize a list to hold the ideal journey with computed ideal_time
-    ideal_journey_dict = {}
+    ideal_journey_data = []
     previous_time = None
     for step in ideal_journey:
         # If this is the first step, set ideal_time to 0
@@ -253,10 +239,11 @@ def get_journey_data(journey_id):
         trimmed_url = step.url.replace(base_url, "", 1)
 
         # Add the step to the ideal journey dictionary
-        ideal_journey_dict[trimmed_url] = {
-            "xpath": xpath,  # Use the extracted xpath from the element JSON
+        ideal_journey_data.append({
+            "url": trimmed_url,
+            "xpath": xpath,
             "ideal_time": ideal_time
-        }
+        })
 
         # Update previous_time to the current step's created_at for the next iteration
         previous_time = step.created_at
@@ -304,7 +291,7 @@ def get_journey_data(journey_id):
 
     # Return as JSON response
     return {
-        "ideal_journey": ideal_journey_dict,
+        "ideal_journey": ideal_journey_data,
         "user_journeys": user_journeys_list
     }
 
@@ -519,10 +506,16 @@ def build_funnel_tree(journey_id, journey_data=None):
         for xpath, timestamp, page_url in path:
             # Check if both the page_url and xpath match the ideal path
             is_ideal = False
-            if page_url in ideal_journey:
-                ideal_event = ideal_journey.get(page_url, None)
-                if ideal_event and ideal_event["xpath"] == xpath:
+
+            # Iterate through each item in the ideal_journey list
+            for ideal_event in ideal_journey:
+                # Check if the url matches and xpath matches
+                if ideal_event['url'] == page_url and ideal_event['xpath'] == xpath:
                     is_ideal = True  # Mark as ideal if both the page_url and xpath match
+                    print("Found ideal event:", ideal_event)
+                    break  # Exit the loop once a match is found
+            else:
+                print("No ideal match found.")
 
             # Always add the event as a child with a unique name
             if xpath not in node["children"]:
@@ -594,7 +587,7 @@ def categorize_paths(user_journeys, ideal_journey):
     for journey in user_journeys:
         session_id = journey["session_id"]
         user_steps_count = sum(len(events) for events in journey.get("events", {}).values())  # Count user steps
-        print("ideal_steps_count ", ideal_steps_count, "user_steps_count ", user_steps_count)
+        # print("ideal_steps_count ", ideal_steps_count, "user_steps_count ", user_steps_count)
 
         if journey["status"] == "COMPLETED":
             if user_steps_count > ideal_steps_count:

@@ -96,21 +96,20 @@ def track_event():
     if not person or not customer_session:
         return jsonify({"error": "Person or customer_session not found"}), 404
 
+    # 1) Check for an ongoing journey for this user
     ongoing_journey = CustomerJourney.query.filter_by(person_id=person.uuid, status="IN_PROGRESS").first()
     if ongoing_journey:
         return handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, element, person.uuid)
 
-    first_step = Step.query.join(Journey).filter(
-        Journey.start_url == current_url,
-        Journey.status == JourneyLiveStatus.ACTIVE
-    ).order_by(Step.created_at).with_entities(Step, Journey.id).first()
-    if first_step is None:
-        return jsonify({"status": "No journey found for this URL. Event not tracked."}), 200
+    # 2) If no ongoing journey, check if there's a matching active journey
+    active_journeys = Journey.query.filter_by(status=JourneyLiveStatus.ACTIVE).all()
 
-    active_journeys = Journey.query.filter_by(start_url=current_url, status=JourneyLiveStatus.ACTIVE).all()
     for journey in active_journeys:
-        first_step = json.loads(journey.first_step)
-        if xpath and xpath == first_step["elementDetails"].get("xpath"):
+        first_step = json.loads(journey.first_step)  # Parse firstStep JSON
+
+        # Check if current event matches the journey's first step
+        if first_step.get("url") == current_url and first_step.get("elementDetails", {}).get("xpath") == xpath:
             return start_new_journey(session_id, event_type, current_url, element, person.uuid, journey.id)
 
-    return jsonify({"status": "No journey found for this URL. Event not tracked."}), 200
+    # If no match is found, return "not tracked" response
+    return jsonify({"status": "No journey found for this URL and XPath. Event not tracked."}), 200

@@ -544,7 +544,8 @@ def build_funnel_tree(journey_id, journey_data=None):
             # Calculate time spent
             if prev_timestamp is not None:
                 elapsed_time = timestamp - prev_timestamp
-                ideal_time = ideal_journey.get(page_url, {}).get("ideal_time", None)
+                # Safer fetch for ideal_time
+                ideal_time = next((item["ideal_time"] for item in ideal_journey if item["url"] == page_url), None)
 
                 if ideal_time is not None and elapsed_time > ideal_time * 1.5:
                     node["anomalies"].append(elapsed_time)

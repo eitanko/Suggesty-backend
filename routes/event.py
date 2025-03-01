@@ -18,7 +18,7 @@ def handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url,
         session['journey_steps'] = journey_steps
 
     journey_steps = session['journey_steps']
-    update_journey_steps(journey_steps, current_url, element.get('xpath'))
+    mark_step_completed(journey_steps, current_url, element.get('xpath'))
 
     if all(step['completed'] for step in journey_steps):
         complete_journey(ongoing_journey)
@@ -42,6 +42,7 @@ def start_new_journey(session_id, event_type, current_url, element, person_uuid,
     journey_steps = fetch_journey_steps(journey_id)
     session['journey_steps'] = journey_steps
 
+    mark_step_completed(journey_steps, current_url, element.get('xpath'))
     insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, new_journey=new_journey)
     return jsonify({"status": "New journey started and event tracked", "CJID": new_journey.id}), 201
 
@@ -49,7 +50,7 @@ def fetch_journey_steps(journey_id):
     steps = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at).all()
     return [{'step_number': i+1, 'url': step.url, 'xpath': json.loads(step.element).get('xpath'), 'completed': False} for i, step in enumerate(steps)]
 
-def update_journey_steps(journey_steps, current_url, xpath):
+def mark_step_completed(journey_steps, current_url, xpath):
     for step in journey_steps:
         if step['url'] == current_url and xpath.strip() == step['xpath'].strip():
             step['completed'] = True

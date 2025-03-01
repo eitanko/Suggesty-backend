@@ -565,40 +565,46 @@ def get_summary(journey_data,ideal_journey):
     """
     returns the counts of success, indirect success, and failed journeys.
     """
-    success, indirect_success, failed = categorize_paths(journey_data,ideal_journey)
+    success, indirect_success, in_progress, failed = categorize_paths(journey_data,ideal_journey)
 
     # Return counts as JSON
     return {
             "success_count": len(success),
             "indirect_success_count": len(indirect_success),
+            "in_progress": len(in_progress),
             "failed_count": len(failed),
         }
 
 
 def categorize_paths(user_journeys, ideal_journey):
     """
-    Categorizes paths into success, indirect success, and failed journeys.
+    Categorizes paths into success, indirect success, in-progress, and failed journeys.
     """
     success = []
     indirect_success = []
+    in_progress = []  # New category for in-progress journeys
     failed = []
 
     ideal_steps_count = len(ideal_journey)  # Count of ideal steps
+
     # Group events by session_id
     for journey in user_journeys:
         session_id = journey["session_id"]
         user_steps_count = sum(len(events) for events in journey.get("events", {}).values())  # Count user steps
-        # print("ideal_steps_count ", ideal_steps_count, "user_steps_count ", user_steps_count)
 
+        # Handle different journey statuses
         if journey["status"] == "COMPLETED":
             if user_steps_count > ideal_steps_count:
-                indirect_success.append(session_id)  # Mark as INDIRECT_SUCCESS
+                indirect_success.append(session_id)  # Indirect success if more steps
             else:
-                success.append(session_id)
+                success.append(session_id)  # Success if steps match ideal
+        elif journey["status"] == "IN_PROGRESS":
+            # Categorizing in-progress journey
+            in_progress.append(session_id)
         else:
-            failed.append(session_id)
+            failed.append(session_id)  # Mark as failed for any non-completed journey
 
-    return success, indirect_success, failed
+    return success, indirect_success, in_progress, failed
 
 
 # This API returns the data of the journey details

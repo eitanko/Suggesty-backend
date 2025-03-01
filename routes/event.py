@@ -59,7 +59,7 @@ def mark_step_completed(journey_steps, current_url, xpath):
 
 def complete_journey(ongoing_journey):
     ongoing_journey.status = "COMPLETED"
-    ongoing_journey.completed_at = datetime.utcnow()
+    ongoing_journey.end_time = datetime.utcnow()
     db.session.commit()
 
 def insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, ongoing_journey=None, new_journey=None):

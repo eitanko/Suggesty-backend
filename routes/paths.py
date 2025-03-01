@@ -5,6 +5,9 @@ from models import CustomerJourney, Event, Step
 import json
 from urllib.parse import urlparse
 paths_blueprint = Blueprint("paths", __name__)
+from datetime import datetime, timedelta
+
+THRESHOLD_FAILURE_HOURS = 12  # After 12 hours, a journey is considered failed
 
 # Ideal journey structure with benchmark times (in seconds)
 ideal_journey = {
@@ -264,7 +267,6 @@ def get_journey_data(journey_id):
             # Parse the element field as a JSON object
             element_data = json.loads(event.element)  # Parse the JSON string inside the 'element' field
             xpath = element_data.get("xpath")  # Access the 'xpath' key inside the parsed JSON
-
             # Extract the base URL (protocol + domain) from the event.url
             parsed_url = urlparse(event.url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Create the base URL using scheme and netloc
@@ -286,7 +288,8 @@ def get_journey_data(journey_id):
             "session_id": journey.session_id,
             "user_id": str(journey.person_id),
             "status": journey.status.value,
-            "events": events_dict
+            "events": events_dict,
+            "updated_at": journey.updated_at
         })
 
     # Return as JSON response
@@ -576,9 +579,11 @@ def get_summary(journey_data,ideal_journey):
         }
 
 
+
 def categorize_paths(user_journeys, ideal_journey):
     """
     Categorizes paths into success, indirect success, in-progress, and failed journeys.
+    Checks for 'IN_PROGRESS' journeys that exceed the threshold and marks them as 'FAILED'.
     """
     success = []
     indirect_success = []
@@ -586,6 +591,12 @@ def categorize_paths(user_journeys, ideal_journey):
     failed = []
 
     ideal_steps_count = len(ideal_journey)  # Count of ideal steps
+
+    # Get the current time
+    current_time = datetime.now()
+
+    # Define the threshold as a timedelta object
+    threshold_time = timedelta(hours=THRESHOLD_FAILURE_HOURS)
 
     # Group events by session_id
     for journey in user_journeys:
@@ -599,9 +610,17 @@ def categorize_paths(user_journeys, ideal_journey):
             else:
                 success.append(session_id)  # Success if steps match ideal
         elif journey["status"] == "IN_PROGRESS":
-            # Categorizing in-progress journey
-            in_progress.append(session_id)
+            # Calculate the time difference to mark the journey as failed if it exceeds the threshold
+            updated_at = journey.get("updated_at")  # Last updated time of the journey
+            time_diff = current_time - updated_at # Calculate time difference
+            if time_diff and time_diff > threshold_time:
+                # Mark as failed if it exceeds the threshold
+                failed.append(session_id)
+            else:
+                # Categorize as in-progress if the journey is still active and within threshold
+                in_progress.append(session_id)
         else:
+            # Any other status (e.g., FAILED)
             failed.append(session_id)  # Mark as failed for any non-completed journey
 
     return success, indirect_success, in_progress, failed

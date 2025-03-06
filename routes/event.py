@@ -12,7 +12,7 @@ def fetch_person_and_session(person_id, session_id):
     customer_session = CustomerSession.query.filter_by(session_id=session_id).first()
     return person, customer_session
 
-def handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, element, person_uuid):
+def handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, page_title, element, person_uuid):
     if 'journey_steps' not in session:
         journey_steps = fetch_journey_steps(ongoing_journey.journey_id)
         session['journey_steps'] = journey_steps
@@ -22,13 +22,13 @@ def handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url,
 
     if all(step['completed'] for step in journey_steps):
         complete_journey(ongoing_journey)
-        insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, ongoing_journey=ongoing_journey)
+        insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, person_uuid, ongoing_journey=ongoing_journey)
         return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 200
 
-    insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, ongoing_journey=ongoing_journey)
+    insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, person_uuid, ongoing_journey=ongoing_journey)
     return jsonify({"status": "Event tracked", "CJID": ongoing_journey.id}), 200
 
-def start_new_journey(session_id, event_type, current_url, element, person_uuid, journey_id):
+def start_new_journey(session_id, event_type, current_url, page_title, element, person_uuid, journey_id):
     session.clear()
     new_journey = CustomerJourney(
         session_id=session_id,
@@ -43,7 +43,7 @@ def start_new_journey(session_id, event_type, current_url, element, person_uuid,
     session['journey_steps'] = journey_steps
 
     mark_step_completed(journey_steps, current_url, element.get('xpath'))
-    insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, new_journey=new_journey)
+    insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, person_uuid, new_journey=new_journey)
     return jsonify({"status": "New journey started and event tracked", "CJID": new_journey.id}), 201
 
 def fetch_journey_steps(journey_id):
@@ -102,7 +102,7 @@ def track_event():
     # 1) Check for an ongoing journey for this user
     ongoing_journey = CustomerJourney.query.filter_by(person_id=person.uuid, status="IN_PROGRESS").first()
     if ongoing_journey:
-        return handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, element, person.uuid)
+        return handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, page_title, element, person.uuid)
 
     # 2) If no ongoing journey, check if there's a matching active journey
     active_journeys = Journey.query.filter_by(status=JourneyLiveStatus.ACTIVE).all()
@@ -112,7 +112,7 @@ def track_event():
 
         # Check if current event matches the journey's first step
         if first_step.get("url") == current_url and first_step.get("elementDetails", {}).get("xpath") == xpath:
-            return start_new_journey(session_id, event_type, current_url, element, person.uuid, journey.id)
+            return start_new_journey(session_id, event_type, current_url, page_title, element, person.uuid, journey.id)
 
     # If no match is found, return "not tracked" response
     return jsonify({"status": "No journey found for this URL and XPath. Event not tracked."}), 200

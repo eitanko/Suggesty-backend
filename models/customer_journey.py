@@ -10,6 +10,7 @@ class Step(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
     url = db.Column(db.String(255), nullable=False)
+    page_title = db.Column("pageTitle", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     element = db.Column(db.String(50), nullable=False)
     screen_path = db.Column("screenPath", db.String(255))
@@ -18,9 +19,10 @@ class Step(db.Model):
 
     journey = db.relationship("Journey", back_populates="steps")
 
-    def __init__(self, journey_id, url, event_type, element, screen_path, index):
+    def __init__(self, journey_id, url, page_title, event_type, element, screen_path, index):
         self.journey_id = journey_id
         self.url = url
+        self.page_title = page_title
         self.event_type = event_type
         self.element = element
         self.screen_path = screen_path
@@ -131,6 +133,7 @@ class Event(db.Model):
     session_id = db.Column("sessionId", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     url = db.Column(db.String(255), nullable=False)
+    page_title = db.Column("pageTitle", db.String(255), nullable=False)
     element = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=False)

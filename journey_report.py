@@ -22,17 +22,16 @@ mock_data = [
 ideal_path = ["A", "B", "C", "D"]
 
 
-def get_filtered_paths(data, ideal_path):
+def get_filtered_paths(user_journey, ideal_path):
     """
     Filters out direct success paths and keeps only hidden steps for indirect success.
     """
     filtered_paths = [
         list(set(record["path"]) - set(ideal_path))
-        for record in data
+        for record in user_journey
         if record["status"] == "Success" and set(record["path"]) != set(ideal_path)
     ]
-    #print("Filtered Paths (Hidden Steps):")
-    #print(filtered_paths)
+
     return filtered_paths
 
 

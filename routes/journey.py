@@ -233,6 +233,7 @@ def save_step(journey_id):
         step_details = Step(
             journey_id=journey_id,
             url=data["url"],
+            page_title=data["pageTitle"],
             event_type=data["eventType"],
             element=data["element"],
             screen_path=screenshot_url,

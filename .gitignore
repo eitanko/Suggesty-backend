@@ -1,5 +1,3 @@
-test.png
-test_s3.py
 .env
 journey_report.py
 # Add this line to your .gitignore file

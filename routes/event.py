@@ -62,12 +62,13 @@ def complete_journey(ongoing_journey):
     ongoing_journey.end_time = datetime.utcnow()
     db.session.commit()
 
-def insert_event_and_update_journey(session_id, event_type, current_url, element, person_uuid, ongoing_journey=None, new_journey=None):
+def insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, person_uuid, ongoing_journey=None, new_journey=None):
     element_str = json.dumps(element) if isinstance(element, dict) else element
     event = Event(
         session_id=session_id,
         event_type=event_type,
         url=current_url,
+        page_title=page_title,
         element=element_str,
         customer_journey_id=(ongoing_journey.id if ongoing_journey else new_journey.id),
         timestamp=datetime.utcnow(),
@@ -89,6 +90,7 @@ def track_event():
     person_id = data.get("uuid")
     session_id = data.get("sessionId")
     current_url = data.get("url")
+    page_title = data.get("pageTitle")
     event_type = data.get("eventType")
     element = data.get("element")
     xpath = element.get("xpath") if element else None

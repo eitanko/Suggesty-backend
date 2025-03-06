@@ -140,10 +140,11 @@ class Event(db.Model):
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, element, customer_journey_id=None, timestamp=None, person_id=None):
+    def __init__(self, session_id, event_type, url, page_title, element, customer_journey_id=None, timestamp=None, person_id=None):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
+        self.page_title = page_title,
         self.element = element
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()

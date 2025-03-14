@@ -4,10 +4,11 @@ from sqlalchemy.orm import joinedload
 from models import CustomerJourney, Event, Step
 import json
 from urllib.parse import urlparse
-paths_blueprint = Blueprint("paths", __name__)
+paths_blueprint = Blueprint("ph_events", __name__)
 from datetime import datetime, timedelta
 from collections import Counter
 from .journey_analysis import find_hidden_steps
+# from utils import build_tree, fetch_and_structure_user_journeys
 
 THRESHOLD_FAILURE_HOURS = 12  # After 12 hours, a journey is considered failed
 
@@ -647,7 +648,7 @@ def get_summary(journey_data,ideal_journey):
             "success_count": len(success),
             "indirect_success_count": len(indirect_success),
             "in_progress_count": len(in_progress),
-            "failed_count_count": len(failed),
+            "failed_count": len(failed),
         }
 
 def find_top_drop_off_events(user_journeys, top_n=5):
@@ -744,6 +745,26 @@ def journey(journey_id):
     user_journeys = journey_data["user_journeys"]
     ideal_journey = journey_data["ideal_journey"]
 
+    # Build the user journey tree
+    #user_journeys_v2 = fetch_and_structure_user_journeys(journey_id)
+    #print(user_journeys_v2)
+
+    #journey_tree = build_tree(ideal_journey, user_journeys_v2)
+
+    #json_output = json.dumps(tree_to_json(journey_tree), indent=2)
+    #print(json_output)
+
+    # Convert tree to JSON format
+    def tree_to_dict(node):
+        return {
+            "url": node.url,
+            "xpath": node.xpath,
+            "count": node.count,
+            "ideal": node.ideal,
+            "average_time": node.compute_average_time(),
+            "children": [tree_to_dict(child) for child in node.children]
+        }
+
     summary_data = get_summary(user_journeys,ideal_journey)
     top_drop_off_events = find_top_drop_off_events(user_journeys),
     repeated_clicks = find_repeated_clicks(user_journeys,2)
@@ -755,6 +776,7 @@ def journey(journey_id):
 
     # Return both in a single JSON response
     return jsonify({
+        #"funnel_tree_new": tree_to_json(journey_tree),
         "funnel_tree": funnel_tree_data,
         "repeated_clicks": repeated_clicks,
         "summary": summary_data,

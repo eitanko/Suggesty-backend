@@ -1,6 +1,9 @@
 from flask import request, jsonify, Blueprint
 import psycopg2
 from datetime import datetime
+import logging
+logging.basicConfig(level=logging.INFO)
+
 ph_events_blueprint = Blueprint("paths", __name__)
 
 def save_event(event_data):
@@ -14,6 +17,8 @@ def receive_event():
     event = request.json
     if not event:
         return jsonify({"error": "Invalid event data"}), 400
+
+    logging.info("Received event: %s", event)
 
     print("Received Event:", event)
     # save_event(event)

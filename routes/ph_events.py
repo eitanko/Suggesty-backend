@@ -1,10 +1,12 @@
+from datetime import datetime
 from flask import request, jsonify, Blueprint
 import logging
 import json
+from db import db  # Ensure to import your db instance and Event model
+from models.customer_journey import Event
+ph_events_blueprint = Blueprint("paths", __name__)
 
 logging.basicConfig(level=logging.INFO)
-
-ph_events_blueprint = Blueprint("paths", __name__)
 
 def generate_xpath(element):
     """Generate an XPath from an element dictionary, including text content."""
@@ -49,45 +51,57 @@ def generate_xpath(element):
 
     return xpath
 
-
 def extract_event_data(event):
-    """Extract and print details of the first element from the event."""
+    """Extracts event data and returns it, along with inserting it into the database."""
     try:
+        # Extract elements from the event
         elements = event.get("elements", "[]")
-
         if not isinstance(elements, list) or not elements:
             print("No elements found in event.")
             return
 
+        # Extract the first element details
         first_element = elements[0]
-        print(generate_xpath(first_element))
-        print("First Element Details:")
-        print(f"  Text: {first_element.get('text', 'N/A')}")
-        print(f"  Tag Name: {first_element.get('tag_name', 'N/A')}")
-        print(f"  Class: {first_element.get('attr_class', 'N/A')}")
-        print(f"  ID: {first_element.get('attr_id', 'N/A')}")
-        print(f"  Href: {first_element.get('href', 'N/A')}")
-        print(f"  nth-child: {first_element.get('nth_child', 'N/A')}")
-        print(f"  nth-of-type: {first_element.get('nth_of_type', 'N/A')}")
-        print(f"  Attributes: {json.dumps(first_element.get('attributes', {}), indent=2)}")
+        element_str = generate_xpath(first_element)  # You can replace this with your function to generate XPath
 
-    except Exception as e:
-        logging.error("Error extracting first element details: %s", str(e))
-
-    try:
-        # Extracting the required properties safely using the get() method
+        # Extract required properties from the event
         properties = event.get("properties", {})
         pathname = properties.get("$pathname", "N/A")
         event_type = properties.get("$event_type", "N/A")
-
         timestamp = event.get("timestamp", "N/A")
         event_uuid = event.get("uuid", "N/A")
+        current_url = properties.get("$current_url", "N/A")
+        page_title = properties.get("$page_title", "N/A")
+        # session_id = properties.get("$session_id", "N/A")
+        person_uuid = event.get("uuid", "N/A")
 
-        # Logging or printing the extracted data
-        logging.info(
-            f"Extracted Data - Pathname: {pathname}, Event Type: {event_type}, Timestamp: {timestamp}, UUID: {event_uuid}")
+        # Assuming `ongoing_journey` or `new_journey` is fetched elsewhere
+        ongoing_journey = None  # Fetch your journey details here
+        new_journey = None  # Create new journey if not found
 
-        # Now you can return all the extracted values, including the details from the elements
+        # Assuming that the customer journey ID is fetched from your database or another source
+        # customer_journey_id = (
+        #     ongoing_journey.id if ongoing_journey else new_journey.id) if ongoing_journey or new_journey else None
+
+        # Create an event instance and insert it into the database
+        event_record = Event(
+            session_id="6d02466f-7cb6-4103-a20d-f9da56140e14",
+            event_type=event_type,
+            url=current_url,
+            page_title=page_title,
+            element=element_str,
+            #customer_journey_id=customer_journey_id,
+            customer_journey_id=84,
+            timestamp=datetime.utcnow(),
+            # person_id=person_uuid
+            person_id="e533ed5d-d679-4c42-a203-1d37055085ae"
+        )
+
+        db.session.add(event_record)
+        db.session.commit()
+        logging.info("Event saved to database.")
+
+        # Return extracted data for the response
         return {
             "pathname": pathname,
             "event_type": event_type,
@@ -101,16 +115,17 @@ def extract_event_data(event):
 
 @ph_events_blueprint.route("", methods=["POST"])
 def receive_event():
-    """Receive PostHog events"""
+    """Receive PostHog events and insert them into the database."""
     event = request.json
     if not event:
         return jsonify({"error": "Invalid event data"}), 400
 
-    # logging.info("Received event: %s", event)
-
+    # Process and insert event data into the database
     extracted_data = extract_event_data(event)
-    # if extracted_data:
-    #     logging.info("Extracted Data: %s", extracted_data)
-    #     print("Extracted Event Data:", extracted_data)
 
-    return jsonify({"message": "Event received", "data": extracted_data}), 200
+    if extracted_data:
+        logging.info("Event processed and saved successfully.")
+        return jsonify({"message": "Event received and saved", "data": extracted_data}), 200
+    else:
+        logging.error("Failed to process event.")
+        return jsonify({"error": "Failed to process event"}), 500

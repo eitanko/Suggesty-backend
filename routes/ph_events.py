@@ -116,6 +116,10 @@ def extract_event_data(event):
 @ph_events_blueprint.route("", methods=["POST"])
 def receive_event():
     """Receive PostHog events and insert them into the database."""
+
+    raw_data = request.get_data(as_text=True)  # Capture raw body
+    logging.info(f"Raw Event Data: {raw_data}")
+
     event = request.json
     if not event:
         return jsonify({"error": "Invalid event data"}), 400

@@ -295,7 +295,7 @@ def get_final_step(journey_id):
     else:
         return jsonify({"error": "No steps found for this journey"}), 404
 
-# 🔹 Save First & Last Step for Journey
+# 🔹 Save First & Last Step for Journey (depricated)
 @journey_blueprint.route('/<int:journey_id>/save', methods=['POST'])
 def save_journey_first_last_step(journey_id):
     try:
@@ -330,7 +330,8 @@ def save_journey_first_last_step(journey_id):
             "url": last_step.url,
             "elementDetails": {
                 "eventType": event_type,
-                "xpath": xpath
+                "xpath": xpath,
+                "elementsChain": last_step.elements_chain
             }
         }
 
@@ -408,7 +409,8 @@ def update_journey_status(journey_id):
                 "url": first_step.url,
                 "elementDetails": {
                     "eventType": first_step.event_type,
-                    "xpath": json.loads(first_step.element).get("xpath")
+                    "xpath": json.loads(first_step.element).get("xpath"),
+                    "elementsChain": first_step.elements_chain
                 }
             }
             journey.first_step = json.dumps(first_step_data)
@@ -418,7 +420,8 @@ def update_journey_status(journey_id):
                 "url": last_step.url,
                 "elementDetails": {
                     "eventType": last_step.event_type,
-                    "xpath": json.loads(last_step.element).get("xpath")
+                    "xpath": json.loads(last_step.element).get("xpath"),
+                    "elementsChain": last_step.elements_chain
                 }
             }
             journey.last_step = json.dumps(last_step_data)

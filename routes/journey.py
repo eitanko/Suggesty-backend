@@ -2,6 +2,9 @@ from flask import Blueprint, request, jsonify
 import boto3
 import base64
 from uuid import uuid4
+
+from sqlalchemy.sql.base import elements
+
 from config import Config  # Import the centralized configuration
 from models import Journey, Step, JourneyLiveStatus
 from db import db
@@ -236,6 +239,7 @@ def save_step(journey_id):
             page_title=data["pageTitle"],
             event_type=data["eventType"],
             element=data["element"],
+            elements_chain=data["elementsChain"],
             screen_path=screenshot_url,
             index=data["index"]
         )

@@ -13,18 +13,20 @@ class Step(db.Model):
     page_title = db.Column("pageTitle", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     element = db.Column(db.String(50), nullable=False)
+    elements_chain = db.Column("elementsChain", db.String(255))
     screen_path = db.Column("screenPath", db.String(255))
     index = db.Column(db.Integer, nullable=False)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
 
     journey = db.relationship("Journey", back_populates="steps")
 
-    def __init__(self, journey_id, url, page_title, event_type, element, screen_path, index):
+    def __init__(self, journey_id, url, page_title, event_type, element, elements_chain, screen_path, index):
         self.journey_id = journey_id
         self.url = url
         self.page_title = page_title
         self.event_type = event_type
         self.element = element
+        self.elements_chain = elements_chain
         self.screen_path = screen_path
         self.index = index
 
@@ -32,20 +34,14 @@ class Person(db.Model):
     __tablename__ = "Person"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    uuid = db.Column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    name = db.Column("name", db.String(255), nullable=True)
-    email = db.Column("email", db.String(255), unique=True, nullable=True)
-    role = db.Column("role", db.String(100), nullable=True)
-    segment = db.Column("segment", db.String(100), nullable=True)
-    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
-    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
-                           onupdate=db.func.current_timestamp())
+    uuid = db.Column(UUID(as_uuid=True), unique=True, nullable=False)  # Store PostHog user UUID
+    name = db.Column(db.String(255), nullable=True)  # Optional metadata
+    email = db.Column(db.String(255), unique=True, nullable=True)  # Optional metadata
+    role = db.Column(db.String(100), nullable=True)  # Optional metadata
+    segment = db.Column(db.String(100), nullable=True)  # Optional metadata
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
-    sessions = db.relationship("CustomerSession", backref="person", lazy=True)
-    customer_journeys = db.relationship("CustomerJourney", back_populates="person")  # Add back relationship
-
-    # Relationships
-    journeys = db.relationship("CustomerJourney", back_populates="person", overlaps="customer_journeys")  # Add overlaps here
 
 # Define the Enum class for JourneyStatus
 class JourneyStatusEnum(Enum):
@@ -87,7 +83,7 @@ class CustomerJourney(db.Model):
     # Foreign keys and relationships
     session_id = db.Column("sessionId", db.String(255), nullable=False)
     journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
-    person_id = db.Column("personId", db.String(36), db.ForeignKey("Person.uuid"), nullable=False)  # ForeignKey linking to Person.uuid
+    person_id = db.Column("personId", db.String(36), nullable=True)
 
     # Attributes
     status = db.Column("status", db.Enum(JourneyStatusEnum), nullable=False, default=JourneyStatusEnum.IN_PROGRESS)
@@ -101,14 +97,13 @@ class CustomerJourney(db.Model):
     # Relationships
     journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
-    person = db.relationship("Person", back_populates="customer_journeys")
 
-    def __init__(self, journey_id, session_id, person_id, status, last_step=None):
+    def __init__(self, journey_id, session_id, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, last_step=None):
         self.journey_id = journey_id
         self.session_id = session_id
-        self.person_id = person_id
-        self.last_step = last_step
+        self.person_id = person_id  # Can be None if not available
         self.status = status
+        self.last_step = last_step
 
 class CustomerSession(db.Model):
     __tablename__ = "CustomerSession"
@@ -129,7 +124,7 @@ class Event(db.Model):
     __tablename__ = "Event"
 
     id = db.Column(db.Integer, primary_key=True)
-    person_id = db.Column("personId", UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)  # Update to the correct column name
+    person_id = db.Column("personId", db.String(36), nullable=True)  # Now just a string, not a ForeignKey
     session_id = db.Column("sessionId", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     url = db.Column(db.String(255), nullable=False)
@@ -144,9 +139,9 @@ class Event(db.Model):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
-        self.page_title = page_title,
+        self.page_title = page_title  # Removed the comma that turned it into a tuple
         self.element = element
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
-        self.person_id = person_id
+        self.person_id = person_id  # Now optional
 

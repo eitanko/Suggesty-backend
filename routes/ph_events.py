@@ -132,13 +132,6 @@ def receive_event():
     event_id =      event.get("distinct_id", "N/A")
     # timestamp =     event.get("timestamp", "N/A")
 
-
-
-
-    # logging.info("Event processed and saved successfully.")
-    # return jsonify({"message": "Event received and saved", "data": event_data}), 200
-    #-------------------------------------------------------------
-
     # 1) Check for an ongoing journey for this user
     ongoing_journey = CustomerJourney.query.filter_by(person_id=person_id, status="IN_PROGRESS").first()
     if ongoing_journey:
@@ -151,8 +144,8 @@ def receive_event():
         first_step = json.loads(journey.first_step)  # Parse firstStep JSON
 
         # Check if current event matches the journey's first step
-        first_element_str = first_step.get("elements_chain", "")
-        if first_step.get("url") == current_url and first_element_str == elements_chain:
+        first_element_str = first_step.get("elementDetails").get("elementsChain")
+        if first_step.get("url") == current_url and first_element_str.split(';')[0] == elements_chain:
             return start_new_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_id, journey.id)
 
     # If no match is found, return "not tracked" response

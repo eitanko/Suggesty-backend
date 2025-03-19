@@ -130,17 +130,19 @@ class Event(db.Model):
     url = db.Column(db.String(255), nullable=False)
     page_title = db.Column("pageTitle", db.String(255), nullable=False)
     element = db.Column(db.String(255), nullable=False)
+    elements_chain = db.Column("elementsChain", db.String(255))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=False)
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, page_title, element, customer_journey_id=None, timestamp=None, person_id=None):
+    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, customer_journey_id=None, timestamp=None, person_id=None):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
         self.page_title = page_title  # Removed the comma that turned it into a tuple
         self.element = element
+        self.elements_chain = elements_chain
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
         self.person_id = person_id  # Now optional

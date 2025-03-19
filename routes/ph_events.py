@@ -1,11 +1,13 @@
-from datetime import datetime
-from flask import request, jsonify, Blueprint
 import logging
+import re
+from models.customer_journey import Person, CustomerJourney, JourneyStatusEnum, Event, Journey, CustomerSession, Step, JourneyLiveStatus
+from flask import Blueprint, request, jsonify
+from .event import handle_ongoing_journey, start_new_journey
+from db import db
+from datetime import datetime
 import json
-from db import db  # Ensure to import your db instance and Event model
-from models.customer_journey import Event
-ph_events_blueprint = Blueprint("paths", __name__)
 
+ph_events_blueprint = Blueprint("paths", __name__)
 logging.basicConfig(level=logging.INFO)
 
 def generate_xpath(element):
@@ -51,85 +53,107 @@ def generate_xpath(element):
 
     return xpath
 
-def extract_event_data(event):
-    """Extracts event data and returns it, along with inserting it into the database."""
-    try:
-        # Extract elements from the event
-        elements = event.get("elements", "[]")
-        if not isinstance(elements, list) or not elements:
-            print("No elements found in event.")
-            return
+def generate_xpath_from_chain(elements_chain):
+    """Generate an XPath from an elements_chain string."""
 
-        # Extract the first element details
-        first_element = elements[0]
-        element_str = generate_xpath(first_element)  # You can replace this with your function to generate XPath
-
-        # Extract required properties from the event
-        properties = event.get("properties", {})
-        pathname = properties.get("$pathname", "N/A")
-        event_type = properties.get("$event_type", "N/A")
-        timestamp = event.get("timestamp", "N/A")
-        event_uuid = event.get("uuid", "N/A")
-        current_url = properties.get("$current_url", "N/A")
-        page_title = properties.get("$page_title", "N/A")
-        # session_id = properties.get("$session_id", "N/A")
-        person_uuid = event.get("uuid", "N/A")
-
-        # Assuming `ongoing_journey` or `new_journey` is fetched elsewhere
-        ongoing_journey = None  # Fetch your journey details here
-        new_journey = None  # Create new journey if not found
-
-        # Assuming that the customer journey ID is fetched from your database or another source
-        # customer_journey_id = (
-        #     ongoing_journey.id if ongoing_journey else new_journey.id) if ongoing_journey or new_journey else None
-
-        # Create an event instance and insert it into the database
-        event_record = Event(
-            session_id="6d02466f-7cb6-4103-a20d-f9da56140e14",
-            event_type=event_type,
-            url=current_url,
-            page_title=page_title,
-            element=element_str,
-            #customer_journey_id=customer_journey_id,
-            customer_journey_id=84,
-            timestamp=datetime.utcnow(),
-            # person_id=person_uuid
-            person_id="e533ed5d-d679-4c42-a203-1d37055085ae"
-        )
-
-        db.session.add(event_record)
-        db.session.commit()
-        logging.info("Event saved to database.")
-
-        # Return extracted data for the response
-        return {
-            "pathname": pathname,
-            "event_type": event_type,
-            "timestamp": timestamp,
-            "uuid": event_uuid
-        }
-
-    except Exception as e:
-        logging.error("Error extracting event data: %s", str(e))
+    if not elements_chain:
         return None
+
+    elements = elements_chain.split(";")
+    xpath_parts = []
+
+    for element in elements:
+        tag_match = re.search(r"^(\w+)", element)
+        tag_name = tag_match.group(1) if tag_match else "*"
+
+        conditions = []
+
+        # Extract nth-child and nth-of-type
+        # nth_child_match = re.search(r'nth-child="(\d+)"', element)
+        # nth_of_type_match = re.search(r'nth-of-type="(\d+)"', element)
+        attr_id_match = re.search(r'attr_id="([^"]+)"', element)
+
+        if attr_id_match:
+            conditions.append(f"@id='{attr_id_match.group(1)}'")
+        # if nth_child_match:
+        #     conditions.append(f"position()={nth_child_match.group(1)}")
+        # if nth_of_type_match:
+        #     conditions.append(f"position()={nth_of_type_match.group(1)}")
+
+        # Construct XPath for the current element
+        xpath = f"{tag_name}"
+        if conditions:
+            xpath += "[" + " and ".join(conditions) + "]"
+
+        xpath_parts.append(xpath)
+
+    # Join all XPath segments to form the full path
+    full_xpath = "//" + "/".join(xpath_parts)
+    return full_xpath
+
+
 
 @ph_events_blueprint.route("", methods=["POST"])
 def receive_event():
     """Receive PostHog events and insert them into the database."""
 
-    raw_data = request.get_data(as_text=True)  # Capture raw body
-    logging.info(f"Raw Event Data: {raw_data}")
+    # raw_data = request.get_data(as_text=True)  # Capture raw body
+    # logging.info(f"Raw Event Data: {raw_data}")
 
     event = request.json
     if not event:
         return jsonify({"error": "Invalid event data"}), 400
 
     # Process and insert event data into the database
-    extracted_data = extract_event_data(event)
+    # event_data = extract_event_data(event)
+    elements_chain = event.get("elements_chain", "")
+    if not elements_chain:
+        print("No elements_chain found in event.")
+        return
 
-    if extracted_data:
-        logging.info("Event processed and saved successfully.")
-        return jsonify({"message": "Event received and saved", "data": extracted_data}), 200
-    else:
-        logging.error("Failed to process event.")
-        return jsonify({"error": "Failed to process event"}), 500
+
+    # Extract the first element and store it in a variable to compare
+    # Split the elements_chain by ';' and take the first item
+    elements_chain = elements_chain.split(';')[0]  # Store the first element of elements_chain
+
+
+    session_id =    event.get("session_id", "N/A")
+    event_type =    event.get("event_type", "N/A")
+    current_url =   event.get("current_url", "N/A")
+    page_title =    event.get("page_title", "N/A")
+    xpath =         generate_xpath_from_chain(elements_chain)
+    element =       event.get("elementDetails", {})
+    # xpath =         event.get("elementDetails", {}).get("xpath")
+    person_id =     event.get("uuid", "N/A")
+    # customer_journey_id=84,
+
+    # not in use for now - - - - - - -
+    pathname =      event.get("pathname", "N/A")
+    event_id =      event.get("distinct_id", "N/A")
+    # timestamp =     event.get("timestamp", "N/A")
+
+
+
+
+    # logging.info("Event processed and saved successfully.")
+    # return jsonify({"message": "Event received and saved", "data": event_data}), 200
+    #-------------------------------------------------------------
+
+    # 1) Check for an ongoing journey for this user
+    ongoing_journey = CustomerJourney.query.filter_by(person_id=person_id, status="IN_PROGRESS").first()
+    if ongoing_journey:
+        return handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url, page_title, element, elements_chain, person_id)
+
+    # 2) If no ongoing journey, check if there's a matching active journey
+    active_journeys = Journey.query.with_entities(Journey.first_step,Journey.id).filter_by(status=JourneyLiveStatus.ACTIVE).all()
+
+    for journey in active_journeys:
+        first_step = json.loads(journey.first_step)  # Parse firstStep JSON
+
+        # Check if current event matches the journey's first step
+        first_element_str = first_step.get("elements_chain", "")
+        if first_step.get("url") == current_url and first_element_str == elements_chain:
+            return start_new_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_id, journey.id)
+
+    # If no match is found, return "not tracked" response
+    return jsonify({"status": "No journey found for this URL and XPath. Event not tracked."}), 200

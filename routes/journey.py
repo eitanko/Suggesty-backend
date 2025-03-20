@@ -413,7 +413,7 @@ def update_journey_status(journey_id):
                     "elementsChain": first_step.elements_chain
                 }
             }
-            journey.first_step = json.dumps(first_step_data)
+            journey.first_step = json.dumps(first_step_data, ensure_ascii=False)
 
         if last_step:
             last_step_data = {
@@ -424,7 +424,7 @@ def update_journey_status(journey_id):
                     "elementsChain": last_step.elements_chain
                 }
             }
-            journey.last_step = json.dumps(last_step_data)
+            journey.last_step = json.dumps(last_step_data, ensure_ascii=False)
 
     journey.status = JourneyLiveStatus[new_status]
     db.session.commit()

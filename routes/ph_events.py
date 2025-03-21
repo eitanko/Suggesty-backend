@@ -144,7 +144,7 @@ def receive_event():
         first_step = json.loads(journey.first_step)  # Parse firstStep JSON
 
         # Check if current event matches the journey's first step
-        first_element_str = first_step.get("elementDetails").get("elementsChain")
+        first_element_str = first_step.get("elementsChain")
         if first_step.get("url") == current_url and first_element_str.split(';')[0] == elements_chain:
             return start_new_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_id, journey.id)
 

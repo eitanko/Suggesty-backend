@@ -405,26 +405,22 @@ def update_journey_status(journey_id):
         last_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index.desc()).first()
 
         if first_step:
-            first_step_data = {
-                "url": first_step.url,
-                "elementDetails": {
-                    "eventType": first_step.event_type,
-                    "xpath": json.loads(first_step.element).get("xpath"),
-                    "elementsChain": first_step.elements_chain
-                }
-            }
-            journey.first_step = json.dumps(first_step_data, ensure_ascii=False)
+            first_step_data = (
+                f'{{"url":"{first_step.url}", '
+                f'"eventType":"{first_step.event_type}", '
+                f'"xpath":"{json.loads(first_step.element).get("xpath")}", '
+                f'"elementsChain":"{first_step.elements_chain}"}}'
+            )
+            journey.first_step = str(first_step_data)
 
         if last_step:
-            last_step_data = {
-                "url": last_step.url,
-                "elementDetails": {
-                    "eventType": last_step.event_type,
-                    "xpath": json.loads(last_step.element).get("xpath"),
-                    "elementsChain": last_step.elements_chain
-                }
-            }
-            journey.last_step = json.dumps(last_step_data, ensure_ascii=False)
+            last_step_data = (
+                f'{{"url":"{last_step.url}", '
+                f'"eventType":"{last_step.event_type}", '
+                f'"xpath":"{json.loads(last_step.element).get("xpath")}", '
+                f'"elementsChain":"{last_step.elements_chain}"}}'
+            )
+            journey.last_step = str(last_step_data)
 
     journey.status = JourneyLiveStatus[new_status]
     db.session.commit()

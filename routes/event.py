@@ -112,7 +112,7 @@ def track_event():
         first_step = json.loads(journey.first_step)  # Parse firstStep JSON
 
         # Check if current event matches the journey's first step
-        if first_step.get("url") == current_url and first_step.get("elementDetails", {}).get("xpath") == xpath:
+        if first_step.get("url") == current_url and first_step.get("xpath") == xpath:
             return start_new_journey(session_id, event_type, current_url, page_title, element.get("xpath"), person.uuid, journey.id)
 
     # If no match is found, return "not tracked" response

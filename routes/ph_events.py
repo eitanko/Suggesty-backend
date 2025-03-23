@@ -74,7 +74,11 @@ def receive_event():
     if ongoing_journeys:
         results = []
         for ongoing_journey in ongoing_journeys:
-            journey_steps = session.get(f'journey_steps_{ongoing_journey.id}', fetch_journey_steps(ongoing_journey.journey_id))
+
+            journey_steps = session.get(f'journey_steps_{ongoing_journey.id}')
+            if journey_steps is None:
+                journey_steps = fetch_journey_steps(ongoing_journey.journey_id)
+
             updated_journey_steps = mark_step_completed(journey_steps, current_url, elements_chain)
             session[f'journey_steps_{ongoing_journey.id}'] = updated_journey_steps
 

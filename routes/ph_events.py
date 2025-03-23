@@ -1,3 +1,4 @@
+import logging
 from models.customer_journey import Person, CustomerJourney, JourneyStatusEnum, Event, Journey, Step, JourneyLiveStatus
 from flask import Blueprint, request, jsonify, session
 from db import db
@@ -7,6 +8,10 @@ import json
 
 # Create a Blueprint for events
 posthog_events_blueprint = Blueprint('posthog_events', __name__)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)  # Get a logger for this module
 
 def fetch_person(person_id):
     return Person.query.filter_by(uuid=person_id).first()
@@ -52,12 +57,14 @@ def insert_event_and_update_journey(session_id, event_type, current_url, page_ti
 def receive_event():
     """Receive PostHog events and insert them into the database."""
     event = request.json
+    logger.info(f"Received event: {event}") #log the event
     if not event:
+        logger.warning("Invalid event data received.") #log the error
         return jsonify({"error": "Invalid event data"}), 400
 
     elements_chain = event.get("elements_chain", "")
     if not elements_chain:
-        print("No elements_chain found in event.")
+        logger.warning("No elements_chain found in event.")
         return jsonify({"status": "No elements_chain found in event."}), 200
 
     elements_chain = elements_chain.split(';')[0]
@@ -74,11 +81,9 @@ def receive_event():
     if ongoing_journeys:
         results = []
         for ongoing_journey in ongoing_journeys:
-
             journey_steps = session.get(f'journey_steps_{ongoing_journey.id}')
             if journey_steps is None:
                 journey_steps = fetch_journey_steps(ongoing_journey.journey_id)
-
             updated_journey_steps = mark_step_completed(journey_steps, current_url, elements_chain)
             session[f'journey_steps_{ongoing_journey.id}'] = updated_journey_steps
 

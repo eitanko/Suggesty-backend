@@ -401,8 +401,17 @@ def update_journey_status(journey_id):
         return jsonify({"error": "Journey not found"}), 404
 
     if new_status == JourneyLiveStatus.ACTIVE.name:
-        first_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index).first()
-        last_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index.desc()).first()
+        # first_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.index).first()
+        # last_step = Step.query.filter_by(journey_id=journey_id).order_by(desc(Step.index)).first()
+
+        """
+        TEMPORARY: Fetches first and last steps based on created_at.
+        WARNING: This is unreliable and should only be used for quick testing.
+        """
+
+        steps = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at).all()
+        first_step = steps[0]
+        last_step = steps[-1]
 
         if first_step:
             first_step_data = (

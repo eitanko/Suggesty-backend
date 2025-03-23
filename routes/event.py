@@ -2,6 +2,7 @@ from models.customer_journey import Person, CustomerJourney, JourneyStatusEnum, 
 from flask import Blueprint, request, jsonify, session
 from db import db
 from datetime import datetime
+from utils  import compare_elements
 import json
 
 # Create a Blueprint for events
@@ -23,10 +24,10 @@ def handle_ongoing_journey(ongoing_journey, session_id, event_type, current_url,
     if all(step['completed'] for step in journey_steps):
         complete_journey(ongoing_journey)
         insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, person_uuid, ongoing_journey=ongoing_journey)
-        return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 200
+        return jsonify({"status": "Journey completed", "CJID": ongoing_journey.id}), 201
 
     insert_event_and_update_journey(session_id, event_type, current_url, page_title, element,elements_chain, person_uuid, ongoing_journey=ongoing_journey)
-    return jsonify({"status": "Event tracked", "CJID": ongoing_journey.id}), 200
+    return jsonify({"status": "Event tracked", "CJID": ongoing_journey.id}), 201
 
 def start_new_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_uuid, journey_id):
     session.clear()
@@ -47,12 +48,12 @@ def start_new_journey(session_id, event_type, current_url, page_title, element, 
     return jsonify({"status": "New journey started and event tracked", "CJID": new_journey.id}), 201
 
 def fetch_journey_steps(journey_id):
-    steps = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at).all()
-    return [{'step_number': i+1, 'url': step.url, 'xpath': json.loads(step.element).get('xpath'), 'completed': False} for i, step in enumerate(steps)]
+    steps = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at).all() # todo: order by index
+    return [{'step_number': i+1, 'url': step.url, 'xpath': json.loads(step.element).get('xpath'), 'elements_chain': step.elements_chain.split(';')[0], 'completed': False} for i, step in enumerate(steps)]
 
 def mark_step_completed(journey_steps, current_url, xpath, elements_chain):
     for step in journey_steps:
-        if step['url'] == current_url and elements_chain.strip() == step['elements_chain'].strip():
+        if step['url'] == current_url and compare_elements(step['elements_chain'].split(';')[0], elements_chain):
             step['completed'] = True
             break
     session['journey_steps'] = journey_steps

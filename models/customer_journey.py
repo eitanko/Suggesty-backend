@@ -91,19 +91,19 @@ class CustomerJourney(db.Model):
     end_time = db.Column("endTime", db.DateTime, nullable=True)
     last_step = db.Column("lastStep", db.Integer, nullable=True)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
-    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(),
-                           onupdate=db.func.current_timestamp())
+    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp())
 
     # Relationships
     journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
 
-    def __init__(self, journey_id, session_id, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, last_step=None):
+    def __init__(self, journey_id, session_id, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, last_step=None):
         self.journey_id = journey_id
         self.session_id = session_id
         self.person_id = person_id  # Can be None if not available
         self.status = status
         self.last_step = last_step
+        self.updated_at = updated_at
 
 class CustomerSession(db.Model):
     __tablename__ = "CustomerSession"

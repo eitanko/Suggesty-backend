@@ -25,6 +25,8 @@ def fetch_journey_steps(journey_id):
     return [{'step_number': i+1, 'url': step.url, 'xpath': json.loads(step.element).get('xpath'), 'elements_chain': step.elements_chain.split(';')[0], 'completed': False} for i, step in enumerate(steps)]
 
 def mark_step_completed(journey_steps, current_url, elements_chain):
+    logger.info(f"journey_steps before update: {journey_steps}")
+
     for step in journey_steps:
         if not step['completed'] and step['url'] == current_url and compare_elements(step['elements_chain'].split(';')[0], elements_chain):
             step['completed'] = True
@@ -85,10 +87,11 @@ def receive_event():
             journey_steps = session.get(f'journey_steps_{ongoing_journey.id}')
             if journey_steps is None:
                 journey_steps = fetch_journey_steps(ongoing_journey.journey_id)
+
             updated_journey_steps = mark_step_completed(journey_steps, current_url, elements_chain)
             session[f'journey_steps_{ongoing_journey.id}'] = updated_journey_steps
 
-            logger.info(f"status of all the steps: {updated_journey_steps}")  # add log
+            logger.info(f"status of all the steps: {updated_journey_steps}")
 
             if all(step['completed'] for step in updated_journey_steps):
                 complete_journey(ongoing_journey)

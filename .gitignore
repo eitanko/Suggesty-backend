@@ -2,7 +2,6 @@
 journey_report.py
 # Add this line to your .gitignore file
 git_batch.sh
-utils
 utils/tree_from_db.py
 utils/transform_user_journeys.py
 utils/journey_tree_builder.py

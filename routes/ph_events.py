@@ -116,6 +116,10 @@ def receive_event():
             else:
                 results.append({"status": "Event tracked", "CJID": ongoing_journey.id})
 
+            insert_event_and_update_journey(
+                session_id, event_type, current_url, page_title, element, elements_chain, person_id, ongoing_journey.id
+            )
+
         return jsonify(results), 201
 
     # 2) If no ongoing journey, check if there's a matching active journey

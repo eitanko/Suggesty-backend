@@ -96,6 +96,7 @@ class CustomerJourney(db.Model):
     # Relationships
     journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
+    progress = db.relationship("JourneyProgress", back_populates="customer_journey", cascade="all, delete-orphan")
 
     def __init__(self, journey_id, session_id, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, last_step=None):
         self.journey_id = journey_id
@@ -104,6 +105,18 @@ class CustomerJourney(db.Model):
         self.status = status
         self.last_step = last_step
         self.updated_at = updated_at
+
+class JourneyProgress(db.Model):
+    __tablename__ = 'JourneyProgress'
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey('CustomerJourney.id'), nullable=False)
+    step_number = db.Column("stepNumber", db.Integer, nullable=False)
+    completed = db.Column(db.Boolean, default=False)
+    created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    customer_journey = db.relationship("CustomerJourney", back_populates="progress")
 
 class CustomerSession(db.Model):
     __tablename__ = "CustomerSession"
@@ -146,4 +159,5 @@ class Event(db.Model):
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
         self.person_id = person_id  # Now optional
+
 

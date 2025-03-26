@@ -1,5 +1,5 @@
 from .journey import journey_blueprint
-from .event import event_blueprint
+from routes.depricated.event import event_blueprint
 from .paths import paths_blueprint
 from ._customer_journey import customer_journey_blueprint
 from .person import person_blueprint

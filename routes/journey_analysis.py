@@ -9,6 +9,8 @@ from mlxtend.frequent_patterns import apriori
 from mlxtend.preprocessing import TransactionEncoder
 import pandas as pd
 
+from utils import compare_elements
+
 
 def display_frequent_hidden_steps(filtered_paths, min_support=0.1):
     """
@@ -20,10 +22,11 @@ def display_frequent_hidden_steps(filtered_paths, min_support=0.1):
     # Convert the filtered_paths into a list of transactions (list of steps)
     transactions = [path['path'] for path in filtered_paths]
 
-    # Convert the list of dictionaries into a list of strings (url + xpath)
+    # Convert the list of dictionaries into a list of strings (url + elements_chain)
     processed_transactions = []
     for journey in transactions:
-        processed_journey = [f"{event['url']}|{event['xpath']}" for event in journey]
+        # processed_journey = [f"{event['url']}|{event['xpath']}" for event in journey]
+        processed_journey = [f"{event['url']}|{event['elements_chain']}" for event in journey]
         processed_transactions.append(processed_journey)    # Initialize the TransactionEncoder
 
     # Use TransactionEncoder to convert the list of strings into a binary matrix
@@ -60,7 +63,7 @@ def get_filtered_paths(user_journeys, ideal_journey):
 
     Args:
         user_journeys (list): A list of dictionaries where each dictionary contains 'events', 'journey_id', and 'session_id'.
-        ideal_journey (list): A list of dictionaries containing 'url' and 'xpath', representing the ideal journey steps.
+        ideal_journey (list): A list of dictionaries containing 'url' and 'elements_chain', representing the ideal journey steps.
 
     Returns:
         list: A list of dictionaries containing session_id and filtered paths of hidden steps.
@@ -83,13 +86,14 @@ def get_filtered_paths(user_journeys, ideal_journey):
 
                 # Check if this event matches any step in the ideal journey by comparing both URL and XPath
                 for ideal_step in ideal_journey:
-                    if event['xpath'] == ideal_step['xpath'] and url == ideal_step['url']:
+                    if compare_elements(event['elements_chain'],ideal_step['elements_chain']) and url == ideal_step['url']:
+                    # if event['xpath'] == ideal_step['xpath'] and url == ideal_step['url']:
                         match_found = True
                         break
 
                 # If no match was found, it's a hidden step
                 if not match_found:
-                    hidden_steps.append({'url': url, 'xpath': event['xpath']})
+                    hidden_steps.append({'url': url, 'elements_chain': event['elements_chain']})
 
         # If there are hidden steps, add the session's filtered path to the result
         if hidden_steps:

@@ -231,7 +231,7 @@ def save_step(journey_id):
             screenshot_url = upload_to_s3(image_data, file_name, BUCKET_NAME)
         else:
             screenshot_url = None
-
+        print(f'🔹 show elementsChain: {data["elementsChain"]}')  # Debug log
         # Save step details to the database
         step_details = Step(
             journey_id=journey_id,
@@ -256,44 +256,44 @@ def save_step(journey_id):
 
 # 🔹 Get Final Journey Step: Fetch the final step of a given journey
 #@step_blueprint.route('/final_step', methods=['GET'])
-@journey_blueprint.route('/<int:journey_id>/steps/final', methods=['GET'])
-def get_final_step(journey_id):
-    """
-    GET /journey/<journey_id>/steps/final
-
-    This endpoint retrieves the final step of a given customer journey.
-
-    Path Parameter:
-    - journey_id (int): The unique identifier of the journey.
-
-    Behavior:
-    - Fetches the last recorded step of the specified journey, ordered by creation time.
-    - Returns the event type, element, and URL of the final step.
-    - If no steps are found, returns a 404 error.
-
-    Success Response (200):
-    {
-        "event_type": "click",
-        "element": "#submit-button",
-        "url": "https://example.com/checkout"
-    }
-
-    Error Response (404):
-    {
-        "error": "No steps found for this journey"
-    }
-    """
-    # Fetch the last step of the journey, ordered by creation time (assuming `createdAt` exists)
-    final_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at.desc()).first()
-
-    if final_step:
-        return jsonify({
-            "event_type":final_step.event_type,
-            "element": final_step.element,
-            "url": final_step.url
-        })
-    else:
-        return jsonify({"error": "No steps found for this journey"}), 404
+# @journey_blueprint.route('/<int:journey_id>/steps/final', methods=['GET'])
+# def get_final_step(journey_id):
+#     """
+#     GET /journey/<journey_id>/steps/final
+#
+#     This endpoint retrieves the final step of a given customer journey.
+#
+#     Path Parameter:
+#     - journey_id (int): The unique identifier of the journey.
+#
+#     Behavior:
+#     - Fetches the last recorded step of the specified journey, ordered by creation time.
+#     - Returns the event type, element, and URL of the final step.
+#     - If no steps are found, returns a 404 error.
+#
+#     Success Response (200):
+#     {
+#         "event_type": "click",
+#         "element": "#submit-button",
+#         "url": "https://example.com/checkout"
+#     }
+#
+#     Error Response (404):
+#     {
+#         "error": "No steps found for this journey"
+#     }
+#     """
+    # # Fetch the last step of the journey, ordered by creation time (assuming `createdAt` exists)
+    # final_step = Step.query.filter_by(journey_id=journey_id).order_by(Step.created_at.desc()).first()
+    #
+    # if final_step:
+    #     return jsonify({
+    #         "event_type":final_step.event_type,
+    #         "element": final_step.element,
+    #         "url": final_step.url
+    #     })
+    # else:
+    #     return jsonify({"error": "No steps found for this journey"}), 404
 
 # 🔹 Save First & Last Step for Journey (depricated)
 @journey_blueprint.route('/<int:journey_id>/save', methods=['POST'])

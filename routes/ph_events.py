@@ -63,7 +63,7 @@ def complete_journey(ongoing_journey):
     ongoing_journey.end_time = datetime.utcnow()
     db.session.commit()
 
-def insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_uuid, customer_journey_id):
+def insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_uuid, customer_journey_id, timestamp):
     element_str = json.dumps(element) if isinstance(element, dict) else element
     event = Event(
         session_id=session_id,
@@ -73,8 +73,8 @@ def insert_event_and_update_journey(session_id, event_type, current_url, page_ti
         element=element_str,
         elements_chain=elements_chain,
         customer_journey_id=customer_journey_id,
-        timestamp=datetime.utcnow(),
-        person_id=person_uuid
+        timestamp=timestamp,
+        person_id=person_uuid,
     )
     db.session.add(event)
     CustomerJourney.query.filter_by(id=customer_journey_id).update({'updated_at': datetime.utcnow()})
@@ -100,6 +100,7 @@ def receive_event():
     page_title = event.get("page_title", "N/A")
     element = event.get("elementDetails", {})
     person_id = event.get("uuid", "N/A")
+    timestamp = event.get("timestamp", datetime.utcnow())
 
     # 1) Check for ongoing journeys for this user
     ongoing_c_journeys = fetch_ongoing_journeys(person_id)
@@ -117,7 +118,7 @@ def receive_event():
                 results.append({"status": "Event tracked", "CJID": ongoing_journey.id})
 
             insert_event_and_update_journey(
-                session_id, event_type, current_url, page_title, element, elements_chain, person_id, ongoing_journey.id
+                session_id, event_type, current_url, page_title, element, elements_chain, person_id, ongoing_journey.id, timestamp
             )
 
         return jsonify(results), 201

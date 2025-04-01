@@ -317,6 +317,7 @@ def translate_elements_chain(elements_chain):
     # Define regex patterns for link and button
     link_pattern = re.compile(r'a:text="([^"]+)"')
     button_pattern = re.compile(r'button:text="([^"]+)"')
+    input_pattern = re.compile(r'input:.*?attr__id="([^"]+)"')
 
     # Search for link text
     link_match = link_pattern.search(elements_chain)
@@ -327,6 +328,12 @@ def translate_elements_chain(elements_chain):
     button_match = button_pattern.search(elements_chain)
     if button_match:
         return f"button {button_match.group(1)}"
+
+    # Search for input id
+    input_match = input_pattern.search(elements_chain)
+    if input_match:
+        print(input_match.group(1))
+        return f"input {input_match.group(1)} clicked"
 
     # Return original if no match found
     return elements_chain

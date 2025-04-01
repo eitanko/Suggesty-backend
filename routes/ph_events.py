@@ -144,7 +144,7 @@ def receive_event():
             logger.info(f"after updating the completion status: {step_completed}")
             # updated_journey_steps = fetch_journey_steps(journey.id, new_c_journey.id)
 
-            insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_id, new_c_journey.id)
+            insert_event_and_update_journey(session_id, event_type, current_url, page_title, element, elements_chain, person_id, new_c_journey.id, timestamp)
             new_journeys.append({"status": "New journey started and event tracked", "CJID": new_c_journey.id})
 
     if new_journeys:

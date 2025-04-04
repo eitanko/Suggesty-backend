@@ -99,7 +99,7 @@ def receive_event():
     current_url = event.get("current_url", "N/A")
     page_title = event.get("page_title", "N/A")
     element = event.get("elementDetails", {})
-    person_id = event.get("uuid", "N/A")
+    person_id = event.get("distinct_id", "N/A")
     timestamp = event.get("timestamp", datetime.utcnow())
 
     # 1) Check for ongoing journeys for this user

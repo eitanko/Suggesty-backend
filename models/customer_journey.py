@@ -160,4 +160,15 @@ class Event(db.Model):
         self.timestamp = timestamp or datetime.utcnow()
         self.person_id = person_id  # Now optional
 
+class RawEvent(db.Model):
+    __tablename__ = 'RawEvent'
 
+    id = db.Column(db.String(255), primary_key=True) # uuid is the event id from PostHog
+    distinct_id = db.Column("distinctId", db.String(255), nullable=True)  # distinct_id is the person id from PostHog
+    session_id = db.Column("sessionId", db.String(255), nullable=True)
+    event = db.Column( db.String(255), nullable=True)
+    event_type = db.Column("eventType", db.String(255), nullable=True)
+    pathname = db.Column(db.String(255), nullable=True)
+    current_url = db.Column("currentUrl", db.String(255), nullable=True)
+    elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    timestamp = db.Column(db.DateTime, nullable=True)

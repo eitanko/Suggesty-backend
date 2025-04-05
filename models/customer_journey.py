@@ -89,7 +89,6 @@ class CustomerJourney(db.Model):
     status = db.Column("status", db.Enum(JourneyStatusEnum), nullable=False, default=JourneyStatusEnum.IN_PROGRESS)
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
     end_time = db.Column("endTime", db.DateTime, nullable=True)
-    last_step = db.Column("lastStep", db.Integer, nullable=True)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp())
 
@@ -98,12 +97,11 @@ class CustomerJourney(db.Model):
     events = db.relationship("Event", back_populates="customer_journey")
     progress = db.relationship("JourneyProgress", back_populates="customer_journey", cascade="all, delete-orphan")
 
-    def __init__(self, journey_id, session_id, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, last_step=None):
+    def __init__(self, journey_id, session_id, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS):
         self.journey_id = journey_id
         self.session_id = session_id
         self.person_id = person_id  # Can be None if not available
         self.status = status
-        self.last_step = last_step
         self.updated_at = updated_at
 
 class JourneyProgress(db.Model):

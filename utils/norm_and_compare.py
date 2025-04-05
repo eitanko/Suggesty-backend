@@ -5,8 +5,8 @@ def compare_elements(string1, string2):
     Normalizes escaping in two strings and checks if all key-value pairs in string2 appear in string1.
 
     Args:
-        string1: The first string.
-        string2: The second string.
+        string1: The first string. (the recorded ideal step)
+        string2: The second string. (the event from posthog)
 
     Returns:
         True if all key-value pairs in string2 are present in string1 after normalization, False otherwise.

@@ -8,16 +8,23 @@ events_blueprint = Blueprint('events', __name__)
 def receive_posthog_event():
     # Get the JSON data from the request
     data = request.get_json()
+    elements_chain = data.get("elements_chain")
+    distinct_id = data.get("distinct_id"),
+
+    # Check if the event contains the admin attribute
+    if "attr__data-is-admin" in elements_chain and "true" in elements_chain:
+        print(f"Ignoring admin event from distinctId: {distinct_id}")
+        return None  # Skip processing this event
 
     raw_event = RawEvent(
         id=data.get("uuid"),
         session_id=data.get("session_id"),
-        distinct_id=data.get("distinct_id"),
+        distinct_id=distinct_id,
         event=data.get("event"),
         event_type=data.get("event_type"),
         pathname=data.get("pathname"),
         current_url=data.get("current_url"),
-        elements_chain=data.get("elements_chain"),
+        elements_chain=elements_chain,
         timestamp=data.get("timestamp")
     )
 

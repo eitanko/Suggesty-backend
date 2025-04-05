@@ -34,6 +34,11 @@ app.register_blueprint(utils_blueprint, url_prefix='/api/utils')
 app.register_blueprint(posthog_events_blueprint, url_prefix='/api/ph_events')
 app.register_blueprint(events_blueprint, url_prefix='/api/events')
 
+@app.cli.command("process-events")
+def process_events():
+    from services.event_processor import process_raw_events
+    process_raw_events(db.session)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

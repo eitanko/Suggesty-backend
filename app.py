@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from db import db
 from config import Config
@@ -34,11 +34,21 @@ app.register_blueprint(utils_blueprint, url_prefix='/api/utils')
 app.register_blueprint(posthog_events_blueprint, url_prefix='/api/ph_events')
 app.register_blueprint(events_blueprint, url_prefix='/api/events')
 
-@app.cli.command("process-events")
-def process_events():
-    from services.event_processor import process_raw_events
-    process_raw_events(db.session)
 
+@app.route('/api/process-events', methods=['POST'])
+def process_events():
+    import logging
+    import traceback
+
+    from services.event_processor import process_raw_events
+    app.logger.setLevel(logging.INFO)
+    try:
+        # Run the event processing function
+        process_raw_events(db.session)
+        return jsonify({"status": "success", "message": "Events processed successfully"}), 200
+    except Exception as e:
+        app.logger.error("Error processing events:\n" + traceback.format_exc())
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

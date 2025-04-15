@@ -1,3 +1,5 @@
+from email.policy import default
+
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from enum import Enum
@@ -91,18 +93,26 @@ class CustomerJourney(db.Model):
     end_time = db.Column("endTime", db.DateTime, nullable=True)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp())
+    total_steps = db.Column("totalSteps", db.Integer, nullable=True)
+    bounce = db.Column(db.Boolean, nullable=True)  # Set default value for bounce
+    friction_flags = db.Column("frictionFlags", db.Boolean, nullable=False)  # Set default value for bounce
+    current_step_index = db.Column("currentStepIndex", db.Integer, nullable=True, default=0)  # Set default value for bounce
 
     # Relationships
     journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
     progress = db.relationship("JourneyProgress", back_populates="customer_journey", cascade="all, delete-orphan")
 
-    def __init__(self, journey_id, session_id, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS):
+    def __init__(self, journey_id, session_id, start_time, end_time, current_step_index, total_steps=0, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS):
         self.journey_id = journey_id
         self.session_id = session_id
         self.person_id = person_id  # Can be None if not available
+        self.start_time = start_time
+        self.end_time = end_time
         self.status = status
+        self.total_steps = total_steps
         self.updated_at = updated_at
+        self.current_step_index = current_step_index
 
 class JourneyProgress(db.Model):
     __tablename__ = 'JourneyProgress'
@@ -135,7 +145,7 @@ class Event(db.Model):
     __tablename__ = "Event"
 
     id = db.Column(db.Integer, primary_key=True)
-    person_id = db.Column("personId", db.String(36), nullable=True)  # Now just a string, not a ForeignKey
+    person_id = db.Column("personId", db.String(36), nullable=False)  # Now just a string, not a ForeignKey
     session_id = db.Column("sessionId", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
     url = db.Column(db.String(255), nullable=False)
@@ -144,10 +154,11 @@ class Event(db.Model):
     elements_chain = db.Column("elementsChain", db.String(255))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=False)
+    is_match = db.Column(db.Boolean, default=False)  # Column to track if the event matches the journey step
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, customer_journey_id=None, timestamp=None, person_id=None):
+    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, customer_journey_id=None, timestamp=None, person_id=None, is_match=False):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
@@ -157,6 +168,7 @@ class Event(db.Model):
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
         self.person_id = person_id  # Now optional
+        self.is_match = is_match  # Column to track if the event matches the journey step
 
 class RawEvent(db.Model):
     __tablename__ = 'RawEvent'
@@ -170,3 +182,4 @@ class RawEvent(db.Model):
     current_url = db.Column("currentUrl", db.String(255), nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
     timestamp = db.Column(db.DateTime, nullable=True)
+    processed = db.Column(db.Boolean, default=False)  # New column to track if the event has been processed

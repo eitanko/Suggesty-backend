@@ -31,7 +31,7 @@ def compare_elements(string1, string2):
         return dict(re.findall(r'([\w:-]+)="(.*?)"', s))
 
     normalized_string1 = normalize_string(string1.split(';')[0])
-    normalized_string2 = normalize_string(string2)
+    normalized_string2 = normalize_string(string2.split(';')[0])
 
     kv_pairs1 = extract_key_value_pairs(normalized_string1)
     kv_pairs2 = extract_key_value_pairs(normalized_string2)

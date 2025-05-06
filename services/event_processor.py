@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from models import RawEvent, Event, Journey, CustomerJourney, JourneyLiveStatus, JourneyStatusEnum
+from models.customer_journey import CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
 import pandas as pd
 import json
@@ -147,26 +148,23 @@ def process_raw_events(session: Session):
         # STEP 3.3 — SEE IF THIS EVENT MATCHES THE NEXT STEP IN ANY OF THOSE JOURNEYS
 
         for cj in active_cjs_for_user:
-            # We find the ideal journey that this CustomerJourney is based on
+            # Fetch the ideal journey that this CustomerJourney is based on
             ideal_journey = next((j for j in active_ideal_journeys if j.id == cj.journey_id), None)
             if not ideal_journey:
                 continue  # safety check, shouldn't happen
-            print(f"[INFO] Found active journey {cj.id} for user {event_distinct_id} with ideal journey {ideal_journey.id}")
-            # We need to check if the current step index is within the bounds of the ideal journey
-            current_step_index = cj.current_step_index
 
-            # If we’ve already completed all steps in the journey, skip
-            if current_step_index >= len(ideal_journey.steps):
-                continue
+            # We need to check if the current step index is within the bounds of the ideal journey
+            if cj.current_step_index >= len(ideal_journey.steps):
+                continue  # Skip if all steps are already completed
 
             # Fetch the next expected step in the journey
-            expected_step = ideal_journey.steps[current_step_index]
+            expected_step = ideal_journey.steps[cj.current_step_index]
 
-            # Compare event against the expected step
+            # Compare the current event with the expected step
             is_match = expected_step.url == event_url and compare_elements(expected_step.elements_chain,
-                                                                               event_elements_chain)
+                                                                           event_elements_chain)
 
-            # Create the event regardless of match
+            # Create the event
             event = Event(
                 person_id=raw_event.distinct_id,
                 page_title="",
@@ -179,14 +177,18 @@ def process_raw_events(session: Session):
                 timestamp=raw_event.timestamp,
                 is_match=is_match
             )
-
             session.add(event)
 
-            # Only update journey state if this event matched the current expected step
+            # If the event matches, update the journey state
             if is_match:
-                if current_step_index == len(ideal_journey.steps) - 1:
+                if cj.current_step_index == len(ideal_journey.steps) - 1:
                     cj.status = JourneyStatusEnum.COMPLETED
-                    print(f"[INFO] Journey {cj.id} for user {cj.person_id} is now COMPLETED")
+                    cj.current_step_index += 1  # Increment the step index to reflect the final step
+                    cj.end_time = raw_event.timestamp  # Update end_time when journey is completed
+                    total_events = cj.current_step_index + 1  # Index is 0-based
+                    total_ideal_steps = len(ideal_journey.steps)
+                    cj.completion_type = CompletionType.DIRECT if total_events == total_ideal_steps else CompletionType.INDIRECT
+                    print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")
                 else:
                     cj.current_step_index += 1
                     print(f"[INFO] Updated CJ {cj.id}: moved to step {cj.current_step_index}")
@@ -194,6 +196,7 @@ def process_raw_events(session: Session):
                 session.add(cj)
 
             print(f"[INFO] Added {'MATCHED' if is_match else 'UNMATCHED'} event {raw_event.id} to journey {cj.id}")
+
             continue  # check if this event matches any other journeys
 
         # At the end of 3.3, if not yet marked:

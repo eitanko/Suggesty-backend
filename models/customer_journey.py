@@ -51,8 +51,6 @@ class JourneyStatusEnum(Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
-from enum import Enum
-
 class JourneyLiveStatus(Enum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
@@ -74,7 +72,9 @@ class Journey(db.Model):
     steps = db.relationship('Step', back_populates='journey', cascade="all, delete-orphan")
     customer_journeys = db.relationship("CustomerJourney", back_populates="journey")
 
-
+class CompletionType(Enum):
+    DIRECT = "DIRECT"
+    INDIRECT = "INDIRECT"
 
 class CustomerJourney(db.Model):
     __tablename__ = "CustomerJourney"
@@ -89,6 +89,7 @@ class CustomerJourney(db.Model):
 
     # Attributes
     status = db.Column("status", db.Enum(JourneyStatusEnum), nullable=False, default=JourneyStatusEnum.IN_PROGRESS)
+    completion_type = db.Column("completionType", db.Enum(CompletionType), nullable=True)  # New column to track completion type
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
     end_time = db.Column("endTime", db.DateTime, nullable=True)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
@@ -97,13 +98,14 @@ class CustomerJourney(db.Model):
     bounce = db.Column(db.Boolean, nullable=True)  # Set default value for bounce
     friction_flags = db.Column("frictionFlags", db.Boolean, nullable=False)  # Set default value for bounce
     current_step_index = db.Column("currentStepIndex", db.Integer, nullable=True, default=0)  # Set default value for bounce
+    last_status_change_at = db.Column("lastStatusChangeAt", db.DateTime, default=db.func.current_timestamp())
 
     # Relationships
     journey = db.relationship("Journey", back_populates="customer_journeys")
     events = db.relationship("Event", back_populates="customer_journey")
     progress = db.relationship("JourneyProgress", back_populates="customer_journey", cascade="all, delete-orphan")
 
-    def __init__(self, journey_id, session_id, start_time, end_time, current_step_index, total_steps=0, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS):
+    def __init__(self, journey_id, session_id, start_time, end_time, current_step_index, total_steps=0, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, completion_type=None):
         self.journey_id = journey_id
         self.session_id = session_id
         self.person_id = person_id  # Can be None if not available
@@ -113,6 +115,7 @@ class CustomerJourney(db.Model):
         self.total_steps = total_steps
         self.updated_at = updated_at
         self.current_step_index = current_step_index
+        self.completion_type = completion_type
 
 class JourneyProgress(db.Model):
     __tablename__ = 'JourneyProgress'
@@ -183,3 +186,62 @@ class RawEvent(db.Model):
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
     timestamp = db.Column(db.DateTime, nullable=True)
     processed = db.Column(db.Boolean, default=False)  # New column to track if the event has been processed
+
+from cuid import cuid
+
+
+class JourneyAnalytics(db.Model):
+    __tablename__ = 'JourneyAnalytics'
+
+    id = db.Column("id", db.String, primary_key=True, default=cuid)
+    journey_id = db.Column("journeyId", db.String, nullable=False)
+    completion_rate = db.Column("completionRate", db.Float, nullable=True)
+    total_completions = db.Column("totalCompletions", db.Integer, nullable=True) # Total number of completions
+    total_users = db.Column("totalUsers", db.Integer, nullable=True) # Total number of users who started the journey
+    indirect_rate = db.Column("indirectRate", db.Float, nullable=True) # Indirect completion rate (0-1)
+
+    # Total time to complete the journey (nullable if not completed)
+    completion_time_ms = db.Column("completionTimeMs", db.Integer, nullable=True)
+    steps_completed = db.Column("stepsCompleted", db.Integer, nullable=False)
+    total_steps = db.Column("totalSteps", db.Integer, nullable=False)
+    drop_off_distribution = db.Column("dropOffDistribution", db.JSON, nullable=True) # how many users dropped off at each step
+    slowest_step = db.Column("slowestStep", db.Integer, nullable=True) # Step with the highest average time (nullable)
+    friction_score = db.Column("frictionScore", db.Float, nullable=False) # Normalized friction score (0-1 or 0-100)
+    frequent_alt_paths = db.Column("frequentAltPaths", db.JSON, nullable=True) # JSON of frequent alternative paths the user took
+    step_insights = db.Column("stepInsights", db.JSON, nullable=True) # Full funnel structure with ideal and alternative paths with counters/times
+
+    calculated_at = db.Column("calculatedAt", db.DateTime, default=datetime.utcnow) # When the aggregation was run
+    created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FrictionType(Enum):
+    REPEATED = "REPEATED"
+    DELAY = "DELAY"
+    ERROR = "ERROR"
+    DROP_OFF = "DROP_OFF"
+
+class JourneyFriction(db.Model):
+    __tablename__ = 'JourneyFriction'
+
+    id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    journey_id = db.Column("journeyId", db.String, nullable=False)
+    event_name    = db.Column("eventName", db.String, nullable=False)
+    url           = db.Column(db.String, nullable=False)
+    event_details = db.Column("eventDetails", db.String, nullable=False)   # elements_chain
+    friction_type = db.Column("frictionType", db.Enum(FrictionType), nullable=False)
+    friction_rate = db.Column("frictionRate", db.Float, nullable=False)
+    total_users = db.Column("totalUsers", db.Integer, nullable=True) # Total number of users who started the journey
+
+    volume        = db.Column(db.Integer, nullable=False, default=0)
+    created_at    = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+    updated_at    = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+    def __init__(self, journey_id, event_name, url, event_details, friction_type, volume):
+        self.journey_id = journey_id
+        self.event_name = event_name
+        self.url = url
+        self.event_details = event_details
+        self.friction_type = friction_type
+        self.volume = volume

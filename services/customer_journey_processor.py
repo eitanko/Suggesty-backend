@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
-from collections import defaultdict
-from sqlalchemy.event import Events
 from sqlalchemy.orm import Session
 from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event
 from models.customer_journey import FrictionType, JourneyFriction
-
+from utils import compare_elements  # a custom function to check if two element chains are equivalent
+from collections import defaultdict
+from itertools import groupby
+from operator import attrgetter
 
 def calculate_completion_times(journey_groups):
     """
@@ -133,51 +134,210 @@ def calculate_completion_rate(journey_groups):
 
     return completion_rates
 
-from utils import compare_elements  # a custom function to check if two element chains are equivalent
 
+######### CALCULATE REPEATED EVENTS #########
 
-def detect_repeated_behavior(session: Session, cj_id: str, last_ideal_step: int, threshold: int = 3) -> List[Tuple[str, str, int]]:
-    # Fetch the journey events for the given customer journey ID (ordered by timestamp)
-    journey_events = session.query(Event).filter_by(customer_journey_id=cj_id).order_by(Event.timestamp).all()
+def detect_repeated_behavior(session: Session, cj_id: str, last_ideal_step: Optional[int] = None, threshold: int = 3) -> List[Tuple[str, str, int]]:
+    journey_events = session.query(Event)\
+        .filter_by(customer_journey_id=cj_id)\
+        .order_by(Event.timestamp).all()
 
-    # Extract the relevant events starting from the last ideal step onwards
-    # Ensure that we do not try to slice the list with a negative index
-    start_index = max(0, last_ideal_step - 2)
-
-    # Slice the list safely
-    events_after_last_step = journey_events[start_index:]
-
-    # If there are no events after the ideal step, return an empty list
-    if not events_after_last_step:
+    if not journey_events:
         return []
 
-    # Initialize the current event and previous event for tracking repeated events
-    current_event = events_after_last_step[0]  # First event after the last ideal step
-    counter = 0  # Initialize counter
-    # List to store repeated event information
+    start_index = max(0, last_ideal_step - 2) if last_ideal_step else 0
+    events_to_scan = journey_events[start_index:]
+
+    if not events_to_scan:
+        return []
+
     repeated_steps = []
+    current_event = events_to_scan[0]
+    counter = 0
 
-    # Iterate over the events after the last ideal step to check for repeated sequences
-    for event in events_after_last_step[1:]:
-        # Check if the url and elements_chain match the first step of the ideal journey
+    for event in events_to_scan[1:]:
         if event.url == current_event.url and compare_elements(event.elements_chain, current_event.elements_chain):
-        # if event.elements_chain == current_event.elements_chain:
-            # If the elements_chain is the same as the first one, increase the counter
-            counter += 1
+            counter += 1  # This is a repetition
         else:
-            # If the sequence is broken, check if the current sequence meets the threshold
             if counter >= threshold:
-                repeated_steps.append((current_event.elements_chain.split(';')[0], current_event.url, counter))  # Store the event and count
-            # Reset the counter and update the current_event to the new event
+                # Add only if repeated (excluding the first normal interaction)
+                repeated_steps.append((
+                    current_event.elements_chain.split(';')[0],
+                    current_event.url,
+                    counter
+                ))
+            # Reset for next sequence
             current_event = event
-            counter = 1
+            counter = 0
 
-    # After the loop, check the last sequence
+    # Final check after loop ends
     if counter >= threshold:
-        repeated_steps.append((current_event.elements_chain.split(';')[0], current_event.url, counter))
+        repeated_steps.append((
+            current_event.elements_chain.split(';')[0],
+            current_event.url,
+            counter
+        ))
 
-    # If no sequence exceeds the threshold, return an empty list
     return repeated_steps
+
+def calculate_repeated_behavior_all_journeys(journeys: List[CustomerJourney], session: Session) -> Dict[str, List[Tuple[str, str, int]]]:
+    """
+    Detect repeated behavior for all journeys (completed and failed).
+    Returns: { journey_id: [ (element_chain, url, count), ... ] }
+    """
+    repeated_events_by_journey = defaultdict(list)
+
+    for journey in journeys:
+        repeated_events = detect_repeated_behavior(session, journey.id, last_ideal_step=1)
+        if repeated_events:
+            repeated_events_by_journey[journey.journey_id].extend(repeated_events)
+
+    return repeated_events_by_journey
+
+######### CALCULATE TIME ON EACH STEP #########
+
+def get_admin_path_for_journey(session, journey_id: int):
+    """
+    Retrieves the ideal path for a given journey_id using the Step table.
+    Returns a list of steps including url, element, and an artificial timestamp for ordering.
+    """
+    from models import Step  # Adjust import path as needed
+
+    steps = (
+        session.query(Step)
+        .filter(Step.journey_id == journey_id)
+        .order_by(Step.index)
+        .all()
+    )
+
+    # Assign pseudo-timestamps based on index (e.g., 0ms, 600ms, 1200ms)
+    return [
+        {
+            "step": step.index,
+            "url": step.url,
+            "element": step.elements_chain,
+            "timestamp": i * 600  # 600ms per step is an arbitrary placeholder
+        }
+        for i, step in enumerate(steps)
+    ]
+
+def get_event_sequence_for_customer(session, journey):
+    """
+    Given a CustomerJourney object, returns a list of its events ordered by timestamp.
+    Each event is represented as a dict with url, element, and timestamp (in ms).
+    """
+    from models import Event  # Ensure your Event model is correctly imported
+
+    events = (
+        session.query(Event)
+        .filter(Event.customer_journey_id == journey.id)
+        .order_by(Event.timestamp)
+        .all()
+    )
+
+    return [
+        {
+            "url": event.url,
+            "element": event.elements_chain,
+            "timestamp": int(event.timestamp.timestamp() * 1000)  # Convert to milliseconds
+        }
+        for event in events
+    ]
+
+def compute_ideal_step_timings(session, journey_id):
+    """
+    Calculate ideal step timings based on successful journeys.
+    Returns: {step_number: avg_time_in_ms}
+    """
+    ideal_timings = defaultdict(list)
+
+    # Fetch completed journeys for the given journey_id
+    completed_journeys = session.query(CustomerJourney).filter(
+        CustomerJourney.journey_id == journey_id,
+        CustomerJourney.status == JourneyStatusEnum.COMPLETED
+    ).all()
+
+    # Loop through completed journeys to calculate step times
+    for journey in completed_journeys:
+        journey_steps = session.query(Event).filter_by(customer_journey_id=journey.id).order_by(Event.timestamp).all()
+
+        for i in range(1, len(journey_steps)):
+            # Calculate the time spent between each consecutive step
+            step_start_time = journey_steps[i - 1].timestamp
+            step_end_time = journey_steps[i].timestamp
+            time_spent = (step_end_time - step_start_time).total_seconds() * 1000  # in ms
+
+            # Store the time spent for this step number
+            ideal_timings[i].append(time_spent)
+
+    # Calculate the average time for each step
+    for step_number, times in ideal_timings.items():
+        ideal_timings[step_number] = sum(times) / len(times) if times else 0
+
+    return ideal_timings
+
+
+def detect_delayed_steps(session, journey_id, ideal_timings, threshold=1.5):
+    """
+    Detect delayed steps for all customer journeys of a given journey_id.
+    Returns: { customer_journey_id: [ (step_number, actual_time, ideal_time) ] }
+    """
+    delayed_by_cj = {}
+
+    # Fetch all events for the journey_id, joined with CustomerJourney
+    events = (
+        session.query(Event)
+        .join(CustomerJourney, CustomerJourney.id == Event.customer_journey_id)
+        .filter(CustomerJourney.journey_id == journey_id)
+        .order_by(Event.customer_journey_id, Event.timestamp)
+        .all()
+    )
+
+    # Group events by customer_journey_id
+    for cj_id, group in groupby(events, key=attrgetter('customer_journey_id')):
+        step_events = list(group)
+        delayed_steps = []
+
+        for i in range(1, len(step_events)):
+            step_start_time = step_events[i - 1].timestamp
+            step_end_time = step_events[i].timestamp
+            actual_time = (step_end_time - step_start_time).total_seconds() * 1000
+
+            ideal_time = ideal_timings.get(i, 0)
+
+            if ideal_time > 0 and actual_time > threshold * ideal_time:
+                delayed_steps.append((i, actual_time, ideal_time))
+
+        if delayed_steps:
+            delayed_by_cj[cj_id] = delayed_steps
+
+    return delayed_by_cj
+
+
+    return delayed_steps
+
+def upsert_delayed_steps(session, journey_id, delayed_steps, total_users):
+    """
+    Upsert delayed steps into JourneyFriction table.
+    """
+    for step_number, actual_time, ideal_time in delayed_steps:
+        # Calculate friction rate as the percentage of users who experienced the delay
+        volume = 1  # Since we are considering one journey per time
+        friction_rate = (volume / total_users) * 100
+
+        # Call upsert to insert/update delayed friction data into JourneyFriction
+        upsert_journey_friction(
+            session=session,
+            journey_id=str(journey_id),
+            event_name=f"step_{step_number}",
+            url="N/A",  # or the page URL where this step happens
+            event_details=f"Step {step_number} - Delayed",
+            friction_type=FrictionType.DELAYED,
+            friction_rate=friction_rate,
+            total_users=total_users,
+            volume=volume
+        )
+
 
 def calculate_drop_off_distribution(journey_group, session: Session):
     """
@@ -204,14 +364,13 @@ def calculate_drop_off_distribution(journey_group, session: Session):
             last_event = session.query(Event).filter_by(customer_journey_id=journey.id)\
                 .order_by(Event.timestamp.desc()).first()
             if last_event:
-                drop_off_events.append((last_event.elements_chain, last_event.url))
+                drop_off_events.append((last_event.elements_chain.split(';')[0], last_event.url))
 
     # Remove duplicates from reasons
     for step, reasons in drop_off_reasons.items():
         drop_off_reasons[step] = list(set(reasons))
 
     return dict(distribution), drop_off_reasons, drop_off_events
-
 
 def calculate_completed_journeys(journey_groups: dict):
     """
@@ -277,8 +436,6 @@ def upsert_journey_friction(session, journey_id, event_name, url, event_details,
         session.add(new_entry)
         print(f"Inserted new JourneyFriction for {event_name} on {url}")
 
-from collections import defaultdict
-
 def process_journey_metrics(session: Session):
     """
     Process journey metrics such as completion rate and completion time, and insert the results into JourneyAnalytics table.
@@ -306,18 +463,19 @@ def process_journey_metrics(session: Session):
             journey_groups[journey_id], session
         )
 
-        print(f"Drop-off distribution for journey {journey_id}: {drop_off_distribution}")
 
         # 🎯 🔽 START OF FRICTION AGGREGATION BLOCK
         total_users = len(journey_groups[journey_id])  # Total users for this journey
         print(f"Total users for journey {journey_id}: {total_users}")
 
-        repeated_events = drop_off_reasons  # {step: [(element, url, count), ...]}
-
+        # Run repeated behavior detection for all journeys (completed + failed)
+        repeated_events_by_journey = calculate_repeated_behavior_all_journeys(
+            journey_groups[journey_id], session
+        )
         # Initialize a dictionary to aggregate repeated events
         aggregated_friction_data = defaultdict(lambda: {"volume": 0, "total_users": 0})
 
-        for step, events in repeated_events.items():  # Loop through each step's repeated events
+        for step, events in repeated_events_by_journey.items():  # Loop through each step's repeated events
             for element_details, url, count in events:  # For each repeated event (element, url, count)
                 # Accumulate volume for each event (distinct repetitions)
                 aggregated_friction_data[(element_details, url)]["volume"] += 1
@@ -347,7 +505,43 @@ def process_journey_metrics(session: Session):
                 total_users=total_users,
                 volume=volume
             )
-        # 🎯 🔼 END OF FRICTION AGGREGATION BLOCK
+
+
+        # 🎯 DELAYED STEP DETECTION BLOCK
+        # ideal_path = get_admin_path_for_journey(session, journey_id)
+
+        ideal_timings = compute_ideal_step_timings(session, journey_id)  # Precompute ideal times for the journey
+
+        delayed_steps = detect_delayed_steps(session, journey_id, ideal_timings, threshold=1.5)
+
+        if delayed_steps:
+            upsert_delayed_steps(session, journey_id, delayed_steps, total_users)
+
+
+        # 🎯 DROP-OFF FRICTION AGGREGATION
+        drop_off_counts = defaultdict(int)
+
+        for element_details, url in drop_off_events:
+            drop_off_counts[(element_details, url)] += 1
+
+        for (element_details, url), volume in drop_off_counts.items():
+            friction_rate = (volume / total_users) * 100
+
+            print(f"📉 Drop-off Friction - {element_details} on {url}")
+            print(f"Volume: {volume}, Friction Rate: {friction_rate:.2f}%")
+
+            upsert_journey_friction(
+                session=session,
+                journey_id=str(journey_id),
+                event_name="drop_off",
+                url=url,
+                event_details=element_details,
+                friction_type=FrictionType.DROP_OFF,
+                friction_rate=friction_rate,
+                total_users=total_users,
+                volume=volume
+            )
+
 
         # Insert the journey analytics into JourneyAnalytics table
         insert_journey_analytics(

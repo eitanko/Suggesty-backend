@@ -185,7 +185,7 @@ def process_raw_events(session: Session):
                     cj.status = JourneyStatusEnum.COMPLETED
                     cj.current_step_index += 1  # Increment the step index to reflect the final step
                     cj.end_time = raw_event.timestamp  # Update end_time when journey is completed
-                    total_events = cj.current_step_index + 1  # Index is 0-based
+                    total_events = cj.current_step_index  # Index is 0-based
                     total_ideal_steps = len(ideal_journey.steps)
                     cj.completion_type = CompletionType.DIRECT if total_events == total_ideal_steps else CompletionType.INDIRECT
                     print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")

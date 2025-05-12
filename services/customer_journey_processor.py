@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event
-from models.customer_journey import FrictionType, JourneyFriction
+from models.customer_journey import FrictionType, JourneyFriction, CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
 from collections import defaultdict
 from itertools import groupby
@@ -43,11 +43,6 @@ def calculate_completion_times(journey_groups):
 
     return completion_times
 
-def calculate_indirect_completion_rate(analytics):
-    completed = [a for a in analytics if a.match_type in ("DIRECT", "INDIRECT")]
-    indirect = [a for a in analytics if a.match_type == "INDIRECT"]
-    return len(indirect) / len(completed) if completed else 0
-
 def insert_journey_analytics(
     session: Session,
     journey_id: str,
@@ -61,7 +56,7 @@ def insert_journey_analytics(
     slowest_step: int,
     friction_score: float,
     frequent_alt_paths: dict,
-    drop_off_reasons: dict
+    step_insights: dict
 ):
     """
     Insert or update the JourneyAnalytics data for a specific journey_id.
@@ -82,7 +77,7 @@ def insert_journey_analytics(
         journey_analytics.slowest_step=slowest_step,
         journey_analytics.friction_score=friction_score,
         journey_analytics.frequent_alt_paths=frequent_alt_paths,
-        journey_analytics.step_insights=drop_off_reasons
+        journey_analytics.step_insights=step_insights
         journey_analytics.created_at=datetime.utcnow(),
         journey_analytics.updated_at=datetime.utcnow()
     else:
@@ -96,11 +91,11 @@ def insert_journey_analytics(
             completion_time_ms=completion_time_ms,
             steps_completed=steps_completed,
             total_steps=total_steps,
-            drop_off_step=drop_off_distribution,
+            drop_off_distribution=drop_off_distribution,
             slowest_step=slowest_step,
             friction_score=friction_score,
             frequent_alt_paths=frequent_alt_paths,
-            step_insights=drop_off_reasons,
+            step_insights=step_insights,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -244,6 +239,13 @@ def get_event_sequence_for_customer(session, journey):
         for event in events
     ]
 
+# 👇to be deleted ...
+def calculate_indirect_completion_rate(analytics):
+    completed = [a for a in analytics if a.match_type in ("DIRECT", "INDIRECT")]
+    indirect = [a for a in analytics if a.match_type == "INDIRECT"]
+    return len(indirect) / len(completed) if completed else 0
+
+# 👇to be deleted ...
 def compute_ideal_step_timings(session, journey_id):
     """
     Calculate ideal step timings based on successful journeys.
@@ -276,7 +278,7 @@ def compute_ideal_step_timings(session, journey_id):
 
     return ideal_timings
 
-
+# 👇to be deleted ...
 def detect_delayed_steps(session, journey_id, ideal_timings, threshold=1.5):
     """
     Detect delayed steps for all customer journeys of a given journey_id.
@@ -316,6 +318,7 @@ def detect_delayed_steps(session, journey_id, ideal_timings, threshold=1.5):
 
     return delayed_steps
 
+# 👇to be deleted ...
 def upsert_delayed_steps(session, journey_id, delayed_steps, total_users):
     """
     Upsert delayed steps into JourneyFriction table.
@@ -337,6 +340,80 @@ def upsert_delayed_steps(session, journey_id, delayed_steps, total_users):
             total_users=total_users,
             volume=volume
         )
+
+
+def generate_step_insights_from_ideal_path(ideal_path_steps, completed_journeys, threshold=3):
+    """
+    Builds a step_insights JSON for a journey based on:
+    - the ideal admin path
+    - completed user journeys
+    Detects delays as anomalies if actual time > threshold * ideal time.
+    """
+    from statistics import mean
+    from utils.norm_and_compare import compare_elements
+
+    # Step 1: Simulate ideal durations based on admin path (600ms per step assumed)
+    ideal_durations = {}
+    for i in range(1, len(ideal_path_steps)):
+        prev = ideal_path_steps[i - 1]
+        curr = ideal_path_steps[i]
+        key = (prev["url"], prev["element"])
+        ideal_durations[key] = curr["timestamp"] - prev["timestamp"]
+
+    # Step 2: Measure actual times in completed journeys
+    step_stats = defaultdict(lambda: {"times": [], "delayed": 0, "count": 0})
+    for journey in completed_journeys:
+        for i in range(1, len(journey)):
+            prev = journey[i - 1]
+            curr = journey[i]
+            duration = curr["timestamp"] - prev["timestamp"]
+
+            for ideal_step_index in range(len(ideal_path_steps) - 1):
+                ideal_step = ideal_path_steps[ideal_step_index]
+                ideal_key = (ideal_step["url"], ideal_step["element"])
+
+                if prev["url"] == ideal_step["url"] and compare_elements(ideal_step["element"], prev["element"]):
+                    step_stats[ideal_key]["times"].append(duration)
+                    step_stats[ideal_key]["count"] += 1
+                    if duration > threshold * ideal_durations.get(ideal_key, float("inf")):
+                        step_stats[ideal_key]["delayed"] += 1
+                    break  # stop after first match
+
+    # Step 3: Assemble final structure
+    step_insights = {}
+    for i in range(len(ideal_path_steps) - 1):
+        curr = ideal_path_steps[i]
+        next_step = ideal_path_steps[i + 1]
+        key = (curr["url"], curr["element"])
+        stats = step_stats.get(key, {"times": [], "delayed": 0, "count": 0})
+
+        avg_time = mean(stats["times"]) if stats["times"] else 0
+        delay_rate = stats["delayed"] / stats["count"] if stats["count"] else 0
+
+        anomalies = []
+        if delay_rate > 0.2:
+            anomalies.append({
+                "type": "delay",
+                "severity": "high" if delay_rate > 0.5 else "medium",
+                "detail": f"{int(delay_rate * 100)}% of users are delayed"
+            })
+            print(f"Anomaly detected for step {i+1}: {anomalies[-1]['detail']}")
+
+        step_insights[f"step_{i+1}"] = {
+            "url": curr["url"],
+            "element": curr["element"],
+            "avg_time_ms": round(avg_time),
+            "drop_off_rate": 0.0,  # Optional: to be filled
+            "repeated_rate": 0.0,  # Optional: to be filled
+            "anomalies": anomalies,
+            "paths": {
+                "next_step": f"step_{i+2}",
+                "indirect_transitions": {},
+                "drop_off": False
+            }
+        }
+
+    return step_insights
 
 
 def calculate_drop_off_distribution(journey_group, session: Session):
@@ -438,129 +515,77 @@ def upsert_journey_friction(session, journey_id, event_name, url, event_details,
 
 def process_journey_metrics(session: Session):
     """
-    Process journey metrics such as completion rate and completion time, and insert the results into JourneyAnalytics table.
+    Process metrics for each journey_id: store aggregate friction in JourneyFriction,
+    and update JourneyAnalytics with a step_insights JSON based on the ideal path.
     """
-
-    # Fetch customer journeys grouped by journeyId
     journey_groups = fetch_customer_journeys_by_journey_id(session)
-    print(f"Fetched {len(journey_groups)} journeys.")
-
-    # Calculate completion rate, total completed journeys, and completion times
     completion_rates = calculate_completion_rate(journey_groups)
     total_completed = calculate_completed_journeys(journey_groups)
     completion_times = calculate_completion_times(journey_groups)
 
-    # Iterate over each journey and insert/update metrics
-    for journey_id in journey_groups.keys():
-
-        # Retrieve the relevant metrics for this journey
+    for journey_id, customer_journeys in journey_groups.items():
+        completed_journeys = [j for j in customer_journeys if j.status == JourneyStatusEnum.COMPLETED]
+        total_users = len(customer_journeys)
+        total_completions = total_completed.get(journey_id, 0)
         completion_rate = completion_rates.get(journey_id, 0)
         completion_time = completion_times.get(journey_id, 0)
-        total_completions = total_completed.get(journey_id, 0)
 
-        # Calculate drop-off distribution and reasons (including repeated events)
-        drop_off_distribution, drop_off_reasons, drop_off_events = calculate_drop_off_distribution(
-            journey_groups[journey_id], session
-        )
+        # 🔁 REPEATED events (for JourneyFriction)
+        repeated_events_by_journey = calculate_repeated_behavior_all_journeys(customer_journeys, session)
+        aggregated_repeats = defaultdict(lambda: {"volume": 0, "total_users": total_users})
+        for step, events in repeated_events_by_journey.items():
+            for element_details, url, _ in events:
+                aggregated_repeats[(element_details, url)]["volume"] += 1
 
-
-        # 🎯 🔽 START OF FRICTION AGGREGATION BLOCK
-        total_users = len(journey_groups[journey_id])  # Total users for this journey
-        print(f"Total users for journey {journey_id}: {total_users}")
-
-        # Run repeated behavior detection for all journeys (completed + failed)
-        repeated_events_by_journey = calculate_repeated_behavior_all_journeys(
-            journey_groups[journey_id], session
-        )
-        # Initialize a dictionary to aggregate repeated events
-        aggregated_friction_data = defaultdict(lambda: {"volume": 0, "total_users": 0})
-
-        for step, events in repeated_events_by_journey.items():  # Loop through each step's repeated events
-            for element_details, url, count in events:  # For each repeated event (element, url, count)
-                # Accumulate volume for each event (distinct repetitions)
-                aggregated_friction_data[(element_details, url)]["volume"] += 1
-                # Total users (this is the same for all repetitions of the event)
-                aggregated_friction_data[(element_details, url)]["total_users"] = total_users
-
-        # Now calculate the friction rate for each aggregated event
-        for (element_details, url), data in aggregated_friction_data.items():
-            volume = data["volume"]
-            total_users = data["total_users"]
-            # Calculate friction rate as the percentage of users who experienced the friction event
-            friction_rate = (volume / total_users) * 100  # Percentage of users who had this event
-
-            # Print the aggregated data before upserting (for debugging)
-            print(f"Upsert data for event: {element_details}, {url}")
-            print(f"Volume: {volume}, Total Users: {total_users}, Friction Rate: {friction_rate}%")
-
-            # Call upsert to insert/update the aggregated friction data into JourneyFriction
+        for (element_details, url), data in aggregated_repeats.items():
             upsert_journey_friction(
-                session=session,
-                journey_id=str(journey_id),
-                event_name="repeated",  # You can refine this if needed
-                url=url,
-                event_details=element_details,
-                friction_type=FrictionType.REPEATED,
-                friction_rate=friction_rate,
-                total_users=total_users,
-                volume=volume
+                session, str(journey_id), "repeated", url, element_details,
+                FrictionType.REPEATED, (data["volume"] / total_users) * 100,
+                total_users, data["volume"]
             )
 
-
-        # 🎯 DELAYED STEP DETECTION BLOCK
-        # ideal_path = get_admin_path_for_journey(session, journey_id)
-
-        ideal_timings = compute_ideal_step_timings(session, journey_id)  # Precompute ideal times for the journey
-
-        delayed_steps = detect_delayed_steps(session, journey_id, ideal_timings, threshold=1.5)
-
-        if delayed_steps:
-            upsert_delayed_steps(session, journey_id, delayed_steps, total_users)
-
-
-        # 🎯 DROP-OFF FRICTION AGGREGATION
+        # 📉 DROP-OFF events (for JourneyFriction)
+        _, _, drop_off_events = calculate_drop_off_distribution(customer_journeys, session)
         drop_off_counts = defaultdict(int)
-
         for element_details, url in drop_off_events:
             drop_off_counts[(element_details, url)] += 1
 
         for (element_details, url), volume in drop_off_counts.items():
-            friction_rate = (volume / total_users) * 100
-
-            print(f"📉 Drop-off Friction - {element_details} on {url}")
-            print(f"Volume: {volume}, Friction Rate: {friction_rate:.2f}%")
-
             upsert_journey_friction(
-                session=session,
-                journey_id=str(journey_id),
-                event_name="drop_off",
-                url=url,
-                event_details=element_details,
-                friction_type=FrictionType.DROP_OFF,
-                friction_rate=friction_rate,
-                total_users=total_users,
-                volume=volume
+                session, str(journey_id), "drop_off", url, element_details,
+                FrictionType.DROP_OFF, (volume / total_users) * 100,
+                total_users, volume
             )
 
+        # 🧠 Generate full step insights funnel JSON
+        ideal_path = get_admin_path_for_journey(session, journey_id)
+        direct_completed = [j for j in completed_journeys if j.completion_type == CompletionType.DIRECT]
+        completed_sequences = [get_event_sequence_for_customer(session, j) for j in direct_completed]
+        step_insights = generate_step_insights_from_ideal_path(
+            ideal_path_steps=ideal_path,
+            completed_journeys=completed_sequences,
+            threshold=3
+        )
 
-        # Insert the journey analytics into JourneyAnalytics table
+        # 📊 Store journey analytics including step_insights
         insert_journey_analytics(
-            session,
-            str(journey_id),
-            completion_rate,
-            total_completions,
-            0,  # Placeholder for indirect_rate
-            completion_time,
-            0,  # Placeholder for steps_completed
-            0,  # Placeholder for total_steps
-            drop_off_distribution,
-            0,  # Placeholder for slowest_step
-            0,  # Placeholder for friction_score
-            {},  # Placeholder for frequent_alt_paths
-            drop_off_reasons  # Drop-off reasons for this journey
+            session=session,
+            journey_id=str(journey_id),
+            completion_rate=completion_rate,
+            total_completions=total_completions,
+            indirect_rate=0,
+            completion_time_ms=completion_time,
+            steps_completed=0,
+            total_steps=0,
+            drop_off_distribution={},  # already saved above if needed separately
+            slowest_step=0,
+            friction_score=0,
+            frequent_alt_paths={},
+            step_insights=step_insights
         )
 
     return completion_rates
+
 
 
 

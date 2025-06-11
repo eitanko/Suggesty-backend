@@ -14,6 +14,7 @@ class Step(db.Model):
     url = db.Column(db.String(255), nullable=False)
     page_title = db.Column("pageTitle", db.String(255), nullable=False)
     event_type = db.Column("eventType", db.String(50), nullable=False)
+    name = db.Column(db.String(255), nullable=True)  # Optional name for the step
     element = db.Column(db.String(50), nullable=False)
     elements_chain = db.Column("elementsChain", db.String(255))
     screen_path = db.Column("screenPath", db.String(255))
@@ -22,11 +23,12 @@ class Step(db.Model):
 
     journey = db.relationship("Journey", back_populates="steps")
 
-    def __init__(self, journey_id, url, page_title, event_type, element, elements_chain, screen_path, index):
+    def __init__(self, journey_id, url, page_title, event_type, name, element, elements_chain, screen_path, index):
         self.journey_id = journey_id
         self.url = url
         self.page_title = page_title
         self.event_type = event_type
+        self.name = name
         self.element = element
         self.elements_chain = elements_chain
         self.screen_path = screen_path
@@ -202,10 +204,8 @@ class JourneyAnalytics(db.Model):
 
     # Total time to complete the journey (nullable if not completed)
     completion_time_ms = db.Column("completionTimeMs", db.Integer, nullable=True)
-    steps_completed = db.Column("stepsCompleted", db.Integer, nullable=False)
     total_steps = db.Column("totalSteps", db.Integer, nullable=False)
     drop_off_distribution = db.Column("dropOffDistribution", db.JSON, nullable=True) # how many users dropped off at each step
-    slowest_step = db.Column("slowestStep", db.Integer, nullable=True) # Step with the highest average time (nullable)
     friction_score = db.Column("frictionScore", db.Float, nullable=False) # Normalized friction score (0-1 or 0-100)
     frequent_alt_paths = db.Column("frequentAltPaths", db.JSON, nullable=True) # JSON of frequent alternative paths the user took
     step_insights = db.Column("stepInsights", db.JSON, nullable=True) # Full funnel structure with ideal and alternative paths with counters/times
@@ -229,6 +229,7 @@ class JourneyFriction(db.Model):
     event_name    = db.Column("eventName", db.String, nullable=False)
     url           = db.Column(db.String, nullable=False)
     event_details = db.Column("eventDetails", db.String, nullable=False)   # elements_chain
+    session_id    = db.Column("sessionId", db.String, nullable=False)  # session id from PostHog
     friction_type = db.Column("frictionType", db.Enum(FrictionType), nullable=False)
     friction_rate = db.Column("frictionRate", db.Float, nullable=False)
     total_users = db.Column("totalUsers", db.Integer, nullable=True) # Total number of users who started the journey
@@ -238,10 +239,11 @@ class JourneyFriction(db.Model):
     updated_at    = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-    def __init__(self, journey_id, event_name, url, event_details, friction_type, volume):
+    def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume):
         self.journey_id = journey_id
         self.event_name = event_name
         self.url = url
         self.event_details = event_details
+        self.session_id = session_id
         self.friction_type = friction_type
         self.volume = volume

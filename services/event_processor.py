@@ -9,6 +9,8 @@ import json
 # Function to process raw events and update customer journeys
 def process_raw_events(session: Session):
 
+    any_changes_made = False
+
     # STEP 1 — LOAD RAW EVENTS
 
     # First, we want to collect all raw events that haven’t been processed yet.
@@ -46,7 +48,9 @@ def process_raw_events(session: Session):
 
     # STEP 3 — PROCESS EACH RAW EVENT
 
-    any_changes_made = False # Flag to track if any changes were made during processing
+    from collections import defaultdict
+    cj_took_extra_steps = defaultdict(bool) # to monitor indirect success
+    cj_seen_elements = defaultdict(set)
 
     # Now we iterate through each raw event that hasn't been processed yet.
     # For each event, we'll first check if it matches the beginning of any ideal journey
@@ -153,6 +157,8 @@ def process_raw_events(session: Session):
             if not ideal_journey:
                 continue  # safety check, shouldn't happen
 
+            took_extra_steps = False
+
             # We need to check if the current step index is within the bounds of the ideal journey
             if cj.current_step_index >= len(ideal_journey.steps):
                 continue  # Skip if all steps are already completed
@@ -179,15 +185,21 @@ def process_raw_events(session: Session):
             )
             session.add(event)
 
+            if is_match:
+                cj_seen_elements[cj.id].add((event_url, event_elements_chain))
+            else:
+                # Mark as extra step only if this unmatched event was not a previously matched one
+                if (event_url, event_elements_chain) not in cj_seen_elements[cj.id]:
+                    cj_took_extra_steps[cj.id] = True
+
             # If the event matches, update the journey state
             if is_match:
                 if cj.current_step_index == len(ideal_journey.steps) - 1:
                     cj.status = JourneyStatusEnum.COMPLETED
                     cj.current_step_index += 1  # Increment the step index to reflect the final step
                     cj.end_time = raw_event.timestamp  # Update end_time when journey is completed
-                    total_events = cj.current_step_index  # Index is 0-based
-                    total_ideal_steps = len(ideal_journey.steps)
-                    cj.completion_type = CompletionType.DIRECT if total_events == total_ideal_steps else CompletionType.INDIRECT
+                    cj.completion_type = CompletionType.DIRECT if not cj_took_extra_steps[cj.id] else CompletionType.INDIRECT
+
                     print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")
                 else:
                     cj.current_step_index += 1

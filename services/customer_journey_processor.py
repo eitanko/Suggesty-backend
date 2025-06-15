@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.base import elements
+
 from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event
 from models.customer_journey import FrictionType, JourneyFriction, CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
@@ -240,83 +242,96 @@ def get_event_sequence_for_customer(session, journey):
         for event in events
     ]
 
+from typing import Tuple, Dict, List
+# from collections import defaultdict
+from statistics import mean
+# from utils.norm_and_compare import compare_elements
+
+
 def generate_step_insights_from_ideal_path(
     ideal_path_steps,
     completed_journeys,
-    threshold=3,
+    threshold,
     repeated_events=None,
     drop_off_events=None
-)-> Tuple[Dict, List[Tuple[str, str, str, float]]]:
+) -> Tuple[Dict, List[Tuple[str, str, str, float]]]:
     """
     Builds a step_insights JSON for a journey based on:
     - the ideal admin path
     - completed user journeys
     Detects delays as anomalies if actual time > threshold * ideal time.
     """
-    from statistics import mean
-    from utils.norm_and_compare import compare_elements
+    repeated_events = repeated_events or {}
+    drop_off_events = drop_off_events or {}
 
-    # Step 1: Simulate ideal durations based on admin path (600ms per step assumed)
+    # Step 1: Compute expected durations (in ms) between ideal steps
     ideal_durations = {}
     for i in range(1, len(ideal_path_steps)):
-        ideal_prev = ideal_path_steps[i - 1]
-        ideal_curr = ideal_path_steps[i]
-        key = (ideal_prev["url"], ideal_prev["element"])
-        ideal_durations[key] = ((ideal_curr["timestamp"] - ideal_prev["timestamp"]).total_seconds() * 1000)
+        prev = ideal_path_steps[i - 1]
+        curr = ideal_path_steps[i]
+        key = (curr["url"], curr["element"])
+        ideal_durations[key] = (
+            (curr["timestamp"] - prev["timestamp"]).total_seconds() * 1000
+        )
 
-    # Step 2: Measure actual times in completed journeys
-    from collections import defaultdict
-
+    # Step 2: Track actual times and delay sessions
     step_stats = defaultdict(lambda: {
         "times": [],
         "delayed_sessions": set(),
         "all_sessions": set()
     })
-    delayed_events = []  # ✅ Collect per-session delays here
+    delayed_events = []
 
     for journey in completed_journeys:
-        session_id = journey[0].get("session_id")  # assumes session_id is consistent within the journey
+        session_id = journey[0].get("session_id")
         for i in range(1, len(journey)):
-            prev = journey[i - 1]
-            curr = journey[i]
-            duration = curr["timestamp"] - prev["timestamp"]
+            prev_event = journey[i - 1]
+            curr_event = journey[i]
+            duration = curr_event["timestamp"] - prev_event["timestamp"]
 
-            for ideal_step_index in range(len(ideal_path_steps) - 1):
-                ideal_step = ideal_path_steps[ideal_step_index]
-                ideal_key = (ideal_step["url"], ideal_step["element"])
+            for ideal_index in range(1, len(ideal_path_steps)):
+                ideal_prev = ideal_path_steps[ideal_index - 1]
+                ideal_curr = ideal_path_steps[ideal_index]
+                ideal_key = (ideal_curr["url"], ideal_curr["element"])
 
-                if prev["url"] == ideal_step["url"] and compare_elements(ideal_step["element"], prev["element"]) and prev.get("is_match", False):
+                # Compare both previous and current to ideal prev and curr
+                if (
+                        prev_event["url"] == ideal_prev["url"]
+                        and compare_elements(ideal_prev["element"], prev_event["element"])
+                        and curr_event["url"] == ideal_curr["url"]
+                        and compare_elements(ideal_curr["element"], curr_event["element"])
+                        and curr_event.get("is_match", False)
+                ):
                     step_stats[ideal_key]["times"].append(duration)
                     step_stats[ideal_key]["all_sessions"].add(session_id)
 
                     if duration > threshold * ideal_durations.get(ideal_key, float("inf")):
                         step_stats[ideal_key]["delayed_sessions"].add(session_id)
                         delayed_events.append((
-                            prev["element"],
-                            prev["url"],
+                            curr_event["element"],
+                            curr_event["url"],
                             session_id,
                             duration
                         ))
-                    break  # stop after first match
+                    break  # stop after first matching transition
 
-    # Step 3: Assemble final structure
+    # Step 3: Assemble step_insights
     step_insights = {}
-    for i in range(len(ideal_path_steps)):
-        curr = ideal_path_steps[i]
-        key = (curr["url"], curr["element"])
 
-        # stats = step_stats.get(key, {"times": [], "delayed": 0, "count": 0})
+    for i, step in enumerate(ideal_path_steps):
+        key = (step["url"], step["element"])
         stats = step_stats.get(key, {
             "times": [],
             "delayed_sessions": set(),
             "all_sessions": set()
         })
+
         avg_time = mean(stats["times"]) if stats["times"] else 0
         delay_rate = (
             len(stats["delayed_sessions"]) / len(stats["all_sessions"])
-            if stats["all_sessions"]
-            else 0
+            if stats["all_sessions"] else 0
         )
+
         anomalies = []
         if delay_rate:
             anomalies.append({
@@ -324,26 +339,12 @@ def generate_step_insights_from_ideal_path(
                 "severity": "high" if delay_rate > 0.5 else "medium",
                 "detail": f"{int(delay_rate * 100)}% of users are delayed"
             })
-            print(f"Anomaly detected for step {i+1}: {anomalies[-1]['detail']}")
 
-        # friction_key = (curr["element"], curr["url"]) # Adjusted to match the repeated_events structure
-
-        repeated_rate = 0
-        for (element, url), rate in repeated_events.items():
-            if url == curr["url"] and compare_elements(curr["element"],element):
-                repeated_rate = rate
-                break
-
-        drop_off_rate = 0
-        for (element, url), rate in drop_off_events.items():
-            if url == curr["url"] and compare_elements(curr["element"],element):
-                drop_off_rate = rate
-                break
-
-        # Initialize `element` to avoid referencing before assignment
-        element = curr["element"]
-
-        # Add anomalies
+        repeated_rate = next(
+            (rate for (el, url), rate in repeated_events.items()
+             if url == step["url"] and compare_elements(step["element"],el)),
+            0
+        )
         if repeated_rate:
             anomalies.append({
                 "type": "repetition",
@@ -351,6 +352,11 @@ def generate_step_insights_from_ideal_path(
                 "detail": f"{int(repeated_rate * 100)}% of users repeated this step"
             })
 
+        drop_off_rate = next(
+            (rate for (el, url), rate in drop_off_events.items()
+             if url == step["url"] and compare_elements(el, step["element"])),
+            0
+        )
         if drop_off_rate:
             anomalies.append({
                 "type": "drop_off",
@@ -358,29 +364,24 @@ def generate_step_insights_from_ideal_path(
                 "detail": f"{int(drop_off_rate * 100)}% of users dropped off here"
             })
 
-        next_step = f"step_{i + 2}" if i < len(ideal_path_steps) - 1 else None
-
         step_insights[f"step_{i+1}"] = {
-            "name": curr["name"],
-            "url": curr["url"],
-            "element": element,
+            "name": step.get("name"),
+            "url": step["url"],
+            "element": step["element"],
             "avg_time_ms": round(avg_time),
             "drop_off_rate": round(drop_off_rate, 2),
             "repeated_rate": round(repeated_rate, 2),
             "anomalies": anomalies,
             "paths": {
-                "next_step": next_step,
+                "next_step": f"step_{i + 2}" if i < len(ideal_path_steps) - 1 else None,
                 "indirect_transitions": {},
                 "drop_off": False
-            }
+            },
         }
-    # 🐢 Collect per-session delayed events
-    delayed_events = []  # List of (element, url, session_id, delay_ms)
 
     return step_insights, delayed_events
 
-
-def calculate_drop_off_distribution(journey_group, session: Session):
+def calculate_drop_off_distribution(journey_group, session: Session, ideal_path_steps):
     """
     Calculate drop-off distribution for a list of CustomerJourneys.
     Returns:
@@ -394,17 +395,19 @@ def calculate_drop_off_distribution(journey_group, session: Session):
 
     for journey in journey_group:
         if journey.status == JourneyStatusEnum.FAILED and journey.current_step_index is not None:
-            step_number = journey.current_step_index + 1
+            step_number = journey.current_step_index - 1  # Adjusted to match zero-based index
             distribution[step_number] += 1
 
             # Repeated event reasons
             reasons = detect_repeated_behavior(session, journey.id, step_number)
             drop_off_reasons[step_number].extend(reasons)
 
-            # Get last event before drop
-            last_event = session.query(Event).filter_by(customer_journey_id=journey.id).order_by(Event.timestamp.desc()).first()
-            if last_event:
-                drop_off_events.append((last_event.elements_chain.split(';')[0], last_event.url, last_event.session_id))
+            # Get last ideal step directly from ideal_path_steps
+            last_ideal_step = ideal_path_steps[step_number]
+            drop_off_events.append((last_ideal_step["element"], last_ideal_step["url"], journey.session_id))
+
+            # if last_event:
+            #     drop_off_events.append((last_event.elements_chain.split(';')[0], last_event.url, last_event.session_id))
 
     # Remove duplicates from reasons
     for step, reasons in drop_off_reasons.items():
@@ -496,9 +499,6 @@ def calculate_indirect_completion_rate(journey_groups):
 
     return rates
 
-
-
-
 def extract_frequent_alternatives(indirect_completed, session) -> Dict[str, List[Tuple[str, float]]]:
     """
     For each event in indirectly completed journeys, count events not in the ideal path
@@ -524,7 +524,6 @@ def extract_frequent_alternatives(indirect_completed, session) -> Dict[str, List
         result.setdefault(url, []).append((element, round(count / total_indirect, 2)))
 
     return result
-
 
 def process_journey_metrics(session: Session):
     """
@@ -560,7 +559,9 @@ def process_journey_metrics(session: Session):
             )
 
         # 📉 DROP-OFF events (for JourneyFriction)
-        _, _, drop_off_events = calculate_drop_off_distribution(customer_journeys, session)
+        ideal_path = get_admin_path_for_journey(session, journey_id)
+
+        _, _, drop_off_events = calculate_drop_off_distribution(customer_journeys, session, ideal_path)
         drop_off_counts = defaultdict(int)
         for element_details, url, session_id in drop_off_events:
             drop_off_counts[(element_details, url, session_id)] += 1
@@ -583,17 +584,29 @@ def process_journey_metrics(session: Session):
         }
 
         # 🧠 Generate full step insights funnel JSON
-        ideal_path = get_admin_path_for_journey(session, journey_id)
         direct_completed = [j for j in completed_journeys if j.completion_type == CompletionType.DIRECT]
         completed_sequences = [get_event_sequence_for_customer(session, j) for j in direct_completed]
         step_insights, delayed_events = generate_step_insights_from_ideal_path(
             ideal_path_steps=ideal_path,
             completed_journeys=completed_sequences,
-            threshold=4,
+            threshold=10,
             repeated_events=repeated_lookup,
             drop_off_events=drop_off_lookup
         )
 
+        for element_details, url, session_id, delay_ms in delayed_events:
+            upsert_journey_friction(
+                session=session,
+                journey_id=str(journey_id),
+                event_name="delay",
+                url=url,
+                event_details=element_details,
+                session_id=session_id,
+                friction_type=FrictionType.DELAY,
+                friction_rate=(delay_ms / total_users) * 100,  # Adjust calculation as needed
+                total_users=total_users,
+                volume=delay_ms
+            )
 
         indirect_completed = [j for j in completed_journeys if j.completion_type == CompletionType.INDIRECT]
         frequent_alt_paths = extract_frequent_alternatives(indirect_completed, session)

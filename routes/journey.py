@@ -238,6 +238,7 @@ def save_step(journey_id):
             url=data["url"],
             page_title=data["pageTitle"],
             event_type=data["eventType"],
+            name=data.get("name", ""),
             element=data["element"],
             elements_chain=data["elementsChain"],
             screen_path=screenshot_url,

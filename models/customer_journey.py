@@ -1,10 +1,45 @@
 from email.policy import default
 
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 import uuid
 from enum import Enum
 from db import db
 from datetime import datetime
+
+class User(db.Model):
+    __tablename__ = 'User'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    name = Column(String, nullable=True)
+    email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=True)
+    role = Column(String, default="USER", nullable=False)
+
+    # Foreign key to Account
+    account_id = Column("accountId", Integer, ForeignKey('Account.id'), nullable=False)
+
+    # Relationships
+    # account = relationship("Account", back_populates="users")
+    # tokens = relationship("Token", back_populates="user", lazy=True)
+    # sessions = relationship("Session", back_populates="user", lazy=True)
+    # journeys = relationship("Journey", back_populates="user", lazy=True)
+
+
+class Account(db.Model):
+    __tablename__ = 'Account'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    api_key = db.Column(db.String(255), unique=True, nullable=False)
+
+    users = db.relationship("User", backref="account", lazy=True)
+    journeys = db.relationship("Journey", backref="account", lazy=True)
 
 class Step(db.Model):
     __tablename__ = "Step"
@@ -46,8 +81,6 @@ class Person(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
-
-# Define the Enum class for JourneyStatus
 class JourneyStatusEnum(Enum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
@@ -62,6 +95,7 @@ class Journey(db.Model):
     __tablename__ = "Journey"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
     name = db.Column(db.String, nullable=False)
     description = db.Column(db.String, nullable=True)
     user_id = db.Column("userId", db.Integer, nullable=False)
@@ -180,6 +214,7 @@ class RawEvent(db.Model):
 
     id = db.Column(db.String(255), primary_key=True) # uuid is the event id from PostHog
     distinct_id = db.Column("distinctId", db.String(255), nullable=True)  # distinct_id is the person id from PostHog
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
     session_id = db.Column("sessionId", db.String(255), nullable=True)
     event = db.Column( db.String(255), nullable=True)
     event_type = db.Column("eventType", db.String(255), nullable=True)
@@ -187,10 +222,12 @@ class RawEvent(db.Model):
     current_url = db.Column("currentUrl", db.String(255), nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
     timestamp = db.Column(db.DateTime, nullable=True)
-    processed = db.Column(db.Boolean, default=False)  # New column to track if the event has been processed
+    processed = db.Column(db.Boolean, default=False)  # track if the event has been processed
+    processed_ideal_path = db.Column(db.Boolean, default=False)
+    processed_friction = db.Column(db.Boolean, default=False)
+    processed_page_time = db.Column(db.Boolean, default=False)
 
 from cuid import cuid
-
 
 class JourneyAnalytics(db.Model):
     __tablename__ = 'JourneyAnalytics'
@@ -214,6 +251,7 @@ class JourneyAnalytics(db.Model):
     created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
 
 class FrictionType(Enum):
     REPEATED = "REPEATED"
@@ -238,6 +276,7 @@ class JourneyFriction(db.Model):
     created_at    = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
 
     def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume):
         self.journey_id = journey_id

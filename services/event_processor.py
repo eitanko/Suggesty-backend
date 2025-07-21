@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import RawEvent, Event, Journey, CustomerJourney, JourneyLiveStatus, JourneyStatusEnum
+from models import RawEvent, Event, Journey, CustomerJourney, JourneyLiveStatus, JourneyStatusEnum, Account
 from models.customer_journey import CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
 import pandas as pd
@@ -15,7 +15,7 @@ def process_raw_events(session: Session):
 
     # First, we want to collect all raw events that haven’t been processed yet.
     # These are events that were recorded but haven’t been analyzed or assigned to any journey.
-    unprocessed_raw_events = session.query(RawEvent).filter_by(processed=False).order_by(RawEvent.timestamp).all()
+    unprocessed_raw_events = session.query(RawEvent).filter_by(processed_ideal_path=False).order_by(RawEvent.timestamp).all()
 
     # We use pandas here to make it easier to loop over and work with the data.
     # This creates a DataFrame (like an Excel table) where each row is an event.
@@ -104,6 +104,7 @@ def process_raw_events(session: Session):
 
                 # Link raw_event to this journey
                 raw_event.customer_journey_id = new_customer_journey.id
+                raw_event.account_id = 1
 
                 # Create and link the first event (match = True)
                 event = Event(
@@ -127,7 +128,7 @@ def process_raw_events(session: Session):
 
         # If event was already handled in 3.1 (new journey started), skip processing it again in 3.2/3.3
         if event_handled:
-            raw_event.processed = True
+            raw_event.processed_ideal_path = True
             any_changes_made = True
             print(f"[INFO] Skipping 3.2 and 3.3 — event {raw_event.id} already processed in 3.1")
             continue
@@ -145,7 +146,7 @@ def process_raw_events(session: Session):
         if not active_cjs_for_user and not event_handled:
             #and event.customer_journey_id not in [cj.journey_id for cj in active_cjs_for_user]:
             print(f"[INFO] Skipping event {raw_event.id} — not part of any journey")
-            raw_event.processed = True
+            raw_event.processed_ideal_path = True
             any_changes_made = True
             continue  # Skip to next raw event
 
@@ -212,8 +213,9 @@ def process_raw_events(session: Session):
             continue  # check if this event matches any other journeys
 
         # At the end of 3.3, if not yet marked:
-        if not raw_event.processed:
-            raw_event.processed = True
+        if not raw_event.processed_ideal_path:
+            raw_event.processed_ideal_path = True
+            raw_event.account_id = 1
             any_changes_made = True
             print(f"[INFO] Marked raw event {raw_event.id} as processed")
 
@@ -223,7 +225,7 @@ def process_raw_events(session: Session):
         # we mark it as processed so we don’t re-analyze it next time
         # if the event was handled in 3.1 we skip marking it as processed
         if event_handled:
-            raw_event.processed = True
+            raw_event.processed_ideal_path = True
             any_changes_made = True
             print(f"[INFO] Marked raw event {raw_event.id} as processed")
             continue  # skip to next raw event

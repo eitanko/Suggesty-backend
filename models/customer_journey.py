@@ -12,11 +12,11 @@ class User(db.Model):
     __tablename__ = 'User'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column("createdAt", DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column("updatedAt", DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     name = Column(String, nullable=True)
     email = Column(String, unique=True, nullable=False)
-    hashed_password = Column(String, nullable=True)
+    hashed_password = Column("hashedPassword", String, nullable=True)
     role = Column(String, default="USER", nullable=False)
 
     # Foreign key to Account
@@ -34,9 +34,9 @@ class Account(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    api_key = db.Column(db.String(255), unique=True, nullable=False)
+    created_at = db.Column("createdAt", db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column("updatedAt", db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    api_key = db.Column("ApiKey", db.String(255), unique=True, nullable=False)
 
     users = db.relationship("User", backref="account", lazy=True)
     journeys = db.relationship("Journey", backref="account", lazy=True)
@@ -78,8 +78,8 @@ class Person(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=True)  # Optional metadata
     role = db.Column(db.String(100), nullable=True)  # Optional metadata
     segment = db.Column(db.String(100), nullable=True)  # Optional metadata
-    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
 class JourneyStatusEnum(Enum):
     IN_PROGRESS = "IN_PROGRESS"

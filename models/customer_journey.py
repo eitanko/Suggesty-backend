@@ -36,7 +36,7 @@ class Account(db.Model):
     name = db.Column(db.String(255), unique=True, nullable=False)
     created_at = db.Column("createdAt", db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column("updatedAt", db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    api_key = db.Column("ApiKey", db.String(255), unique=True, nullable=False)
+    api_key = db.Column("apiKey", db.String(255), unique=True, nullable=False)
 
     users = db.relationship("User", backref="account", lazy=True)
     journeys = db.relationship("Journey", backref="account", lazy=True)

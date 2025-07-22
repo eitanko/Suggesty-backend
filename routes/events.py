@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, Blueprint
 from db import db
 from models.customer_journey import RawEvent, Account
+import re
 
 events_blueprint = Blueprint('events', __name__)
 
@@ -12,6 +13,8 @@ def receive_posthog_event():
     distinct_id = data.get("distinct_id")
     event_type = data.get("event_type")
     api_key= data.get("apiKey")
+    pathname = data.get("pathname")
+    normalized_pathname = re.sub(r'/\d+', '/#', pathname)
 
     # Check if the event contains the admin attribute
     if "attr__data-is-admin" in elements_chain and "true" in elements_chain:
@@ -19,8 +22,8 @@ def receive_posthog_event():
         return jsonify({"status": "ignored", "message": "Admin event ignored"}), 200  # Return a valid response for ignored events
 
     # Only process events of type 'click'
-    if event_type != "click":
-        return jsonify({"status": "ignored", "message": "Only 'click' events are processed"}), 200
+    # if event_type != "click":
+    #     return jsonify({"status": "ignored", "message": "Only 'click' events are processed"}), 200
 
     # Fetch the account_id using the apiKey
     account = db.session.query(Account).filter_by(api_key=api_key).first()
@@ -37,7 +40,7 @@ def receive_posthog_event():
         account_id=account_id,
         event=data.get("event"),
         event_type=event_type,
-        pathname=data.get("pathname"),
+        pathname=normalized_pathname,
         current_url=data.get("current_url"),
         elements_chain=elements_chain,
         timestamp=data.get("timestamp")

@@ -28,7 +28,6 @@ class User(db.Model):
     # sessions = relationship("Session", back_populates="user", lazy=True)
     # journeys = relationship("Journey", back_populates="user", lazy=True)
 
-
 class Account(db.Model):
     __tablename__ = 'Account'
 
@@ -286,3 +285,14 @@ class JourneyFriction(db.Model):
         self.session_id = session_id
         self.friction_type = friction_type
         self.volume = volume
+
+class PageUsage(db.Model):
+    __tablename__ = 'PageUsage'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
+    pathname = db.Column(db.String(512), nullable=False)
+    avg_time_spent = db.Column("avgTimeSpent", db.Float, nullable=True)
+    total_visits = db.Column("totalVisits", db.Integer, default=0)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
+

@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from db import db
 from config import Config
-from routes import journey_blueprint, paths_blueprint, customer_journey_blueprint,person_blueprint, utils_blueprint, posthog_events_blueprint, events_blueprint, events_failed_blueprint
+from routes import journey_blueprint, paths_blueprint, customer_journey_blueprint,person_blueprint, utils_blueprint, posthog_events_blueprint, events_blueprint, events_failed_blueprint, page_usage_blueprint
 from services.customer_journey_processor import process_journey_metrics
 
 # Initialize Flask app
@@ -35,6 +35,7 @@ app.register_blueprint(utils_blueprint, url_prefix='/api/utils')
 app.register_blueprint(posthog_events_blueprint, url_prefix='/api/ph_events')
 app.register_blueprint(events_blueprint, url_prefix='/api/events')
 app.register_blueprint(events_failed_blueprint, url_prefix='/api/process_events_failed')
+app.register_blueprint(page_usage_blueprint, url_prefix='/api/page_usage')
 
 
 @app.route('/api/process-events', methods=['POST'])

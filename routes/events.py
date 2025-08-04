@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint
 from db import db
 from models.customer_journey import RawEvent, Account
 import re

@@ -1,7 +1,7 @@
 from email.policy import default
 
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 import uuid
 from enum import Enum
@@ -225,6 +225,8 @@ class RawEvent(db.Model):
     processed_ideal_path = db.Column(db.Boolean, default=False)
     processed_friction = db.Column(db.Boolean, default=False)
     processed_page_time = db.Column(db.Boolean, default=False)
+    processed_event_usage = db.Column(db.Boolean, default=False)
+    processed_form_usage = db.Column(db.Boolean, default=False)
 
 from cuid import cuid
 
@@ -257,12 +259,17 @@ class FrictionType(Enum):
     DELAY = "DELAY"
     ERROR = "ERROR"
     DROP_OFF = "DROP_OFF"
+    BACKTRACKING = "BACKTRACKING"
+    FORM_ABANDON = "FORM_ABANDON"
+    FORM_REPEAT = "FORM_REPEAT"
+    MULTI_CLICK = "MULTI_CLICK"
+    RAGE_CLICK = "RAGE_CLICK"
 
 class JourneyFriction(db.Model):
     __tablename__ = 'JourneyFriction'
 
     id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    journey_id = db.Column("journeyId", db.String, nullable=False)
+    journey_id = db.Column("journeyId", db.String, nullable=True)
     event_name    = db.Column("eventName", db.String, nullable=False)
     url           = db.Column(db.String, nullable=False)
     event_details = db.Column("eventDetails", db.String, nullable=False)   # elements_chain
@@ -272,12 +279,14 @@ class JourneyFriction(db.Model):
     total_users = db.Column("totalUsers", db.Integer, nullable=True) # Total number of users who started the journey
 
     volume        = db.Column(db.Integer, nullable=False, default=0)
+    user_dismissed = Column("userDismissed", Boolean, default=False)
+
     created_at    = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column("updatedAt", db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
 
-    def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume):
+    def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume, user_dismissed):
         self.journey_id = journey_id
         self.event_name = event_name
         self.url = url
@@ -285,6 +294,7 @@ class JourneyFriction(db.Model):
         self.session_id = session_id
         self.friction_type = friction_type
         self.volume = volume
+        self.user_dismissed = user_dismissed
 
 class PageUsage(db.Model):
     __tablename__ = 'PageUsage'
@@ -295,4 +305,44 @@ class PageUsage(db.Model):
     avg_time_spent = db.Column("avgTimeSpent", db.Float, nullable=True)
     total_visits = db.Column("totalVisits", db.Integer, default=0)
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
+
+class EventsUsage(db.Model):
+    __tablename__ = 'EventsUsage'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
+    pathname = db.Column(db.String(512), nullable=False)
+    event_type = db.Column("eventType", db.String(255), nullable=True)
+    elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    total_events = db.Column("totalEvents", db.Integer, default=0)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
+    created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+
+    # Unique constraint to prevent duplicate entries
+    __table_args__ = (
+        db.UniqueConstraint('accountId', 'pathname', 'eventType', 'elementsChain', name='unique_event_usage'),
+        db.Index('idx_events_usage_account_clicks', 'accountId', 'totalEvents'),
+    )
+
+class FormUsage(db.Model):
+    __tablename__ = 'FormUsage'
+
+    id = db.Column(Integer, primary_key=True, autoincrement=True)
+    session_id = db.Column("sessionId", db.String(255), nullable=True)
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
+    pathname = db.Column(String, nullable=False)
+    form_hash = db.Column("formHash",String, nullable=False)
+    form_class = db.Column("formClass",String, nullable=False)
+    form_index = db.Column("formIndex",Integer, nullable=True)
+    started_at = db.Column("startedAt",DateTime, nullable=False)
+    submitted_at = db.Column("submittedAt",DateTime, nullable=True)
+    duration = db.Column(Integer, nullable=True)  # in seconds
+    status = db.Column(String, nullable=False)  # "completed" or "abandoned"
+    input_count = db.Column("inputCount",Integer, nullable=False)
+    last_field = db.Column("lastField",String, nullable=True)
+    submit_text = db.Column("submitText",String, nullable=True)
+    elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
+
 

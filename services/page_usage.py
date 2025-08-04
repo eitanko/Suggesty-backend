@@ -34,28 +34,72 @@ def process_page_usage():
     df['time_spent'] = (df['next_timestamp'] - df['timestamp']).dt.total_seconds()
     df['time_spent'] = df['time_spent'].clip(upper=300)  # Cap at 5 minutes per page
 
-    # Step 4: Aggregate by pathname
-    usage_stats = df.groupby('pathname')['time_spent'].agg(['mean', 'count']).reset_index()
-    usage_stats.rename(columns={'mean': 'avg_time_spent', 'count': 'visits'}, inplace=True)
-
-    # Step 5: Batch Update DB
-    page_usage_data = []
-    for _, row in usage_stats.iterrows():
-        page_usage_data.append({
-            'account_id': account_id,
-            'pathname': row['pathname'],
-            'avg_time_spent': row['avg_time_spent'],
-            'total_visits': row['visits'],
-            'updated_at': datetime.now()
-        })
-
-    # Use bulk insert/update
-    db.session.bulk_insert_mappings(PageUsage, page_usage_data)
-
-    # Step 6: Mark events as processed
-    db.session.query(RawEvent).filter(RawEvent.id.in_(df['id'])).update(
-        {"processed_page_time": True}, synchronize_session=False
+    # Step 4: Aggregate by pathname and session, then by user
+    session_stats = (
+        df.groupby(['distinct_id', 'session_id', 'pathname'])['time_spent']
+        .sum()
+        .reset_index()
     )
 
+    # Then aggregate by user and pathname to get average time per user per page
+    user_stats = (
+        session_stats.groupby(['distinct_id', 'pathname'])['time_spent']
+        .sum()
+        .reset_index()
+    )
+
+    # Finally, aggregate by pathname to get overall statistics
+    usage_stats = (
+        user_stats.groupby('pathname')['time_spent']
+        .agg(['mean', 'count'])
+        .reset_index()
+    )
+    usage_stats.rename(columns={'mean': 'avg_time_spent', 'count': 'total_visits'}, inplace=True)
+
+    # Step 5: Batch Update DB
+    existing_pages = db.session.query(PageUsage).filter_by(account_id=account_id).all()
+    existing_page_dict = {page.pathname: page for page in existing_pages}
+
+    page_usage_data = []
+    for _, row in usage_stats.iterrows():
+        pathname = row['pathname']
+        avg_time_spent = row['avg_time_spent']
+        visits = row['total_visits']
+
+        if pathname in existing_page_dict:
+            # Update existing page with weighted average
+            existing_page = existing_page_dict[pathname]
+            total_time = (existing_page.avg_time_spent * existing_page.total_visits) + (avg_time_spent * visits)
+            total_visits = existing_page.total_visits + visits
+
+            # Correct calculation of updated average time spent
+            updated_avg_time_spent = total_time / total_visits
+
+            existing_page.avg_time_spent = updated_avg_time_spent
+            existing_page.total_visits = total_visits
+            existing_page.updated_at = datetime.now()
+        else:
+            # Add new page
+            page_usage_data.append({
+                'account_id': account_id,
+                'pathname': pathname,
+                'avg_time_spent': avg_time_spent,
+                'total_visits': visits,
+                'updated_at': datetime.now()
+            })
+
+    # Bulk insert new pages
+    if page_usage_data:
+        db.session.bulk_insert_mappings(PageUsage, page_usage_data)
+
+    # Mark events as processed
+    event_ids = [event.id for event in unprocessed_events]
+    if event_ids:
+        db.session.query(RawEvent).filter(RawEvent.id.in_(event_ids)).update(
+            {RawEvent.processed_page_time: True},
+            synchronize_session=False
+        )
+
+    # Commit updates to existing pages
     db.session.commit()
     return jsonify({"message": "Page usage processed", "pages": len(usage_stats)}), 200

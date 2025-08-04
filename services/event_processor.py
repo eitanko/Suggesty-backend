@@ -68,7 +68,7 @@ def process_raw_events(session: Session):
 
         for journey_index, journey_row in ideal_journeys_df.iterrows():
             journey_id = journey_row['journey_id']
-            first_step = json.loads(journey_row['first_step'])  # Ensure it's a dict with 'url' and 'elementsChain'
+            first_step = journey_row['first_step']  # No json.loads() needed
 
             # Skip if the user already has an active CustomerJourney for this template
             existing_cj = session.query(CustomerJourney).filter_by(

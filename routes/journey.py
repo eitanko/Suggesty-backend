@@ -421,7 +421,7 @@ def update_journey_status(journey_id):
                 f'"xpath":"{json.loads(first_step.element).get("xpath")}", '
                 f'"elementsChain":"{first_step.elements_chain}"}}'
             )
-            journey.first_step = str(first_step_data)
+            journey.first_step = json.dumps(first_step_data)
 
         if last_step:
             last_step_data = (
@@ -430,7 +430,7 @@ def update_journey_status(journey_id):
                 f'"xpath":"{json.loads(last_step.element).get("xpath")}", '
                 f'"elementsChain":"{last_step.elements_chain}"}}'
             )
-            journey.last_step = str(last_step_data)
+            journey.last_step = json.dumps(last_step_data)
 
     journey.status = JourneyLiveStatus[new_status]
     db.session.commit()

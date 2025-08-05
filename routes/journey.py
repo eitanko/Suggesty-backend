@@ -7,6 +7,7 @@ from sqlalchemy.sql.base import elements
 
 from config import Config  # Import the centralized configuration
 from models import Journey, Step, JourneyLiveStatus
+from utils.element_chain_utils import elements_chain_to_xpath
 from db import db
 import json
 
@@ -232,6 +233,11 @@ def save_step(journey_id):
         else:
             screenshot_url = None
         print(f'🔹 show elementsChain: {data["elementsChain"]}')  # Debug log
+        
+        # Generate XPath from elements_chain
+        elements_chain = data["elementsChain"]
+        generated_xpath = elements_chain_to_xpath(elements_chain) if elements_chain else ""
+        
         # Save step details to the database
         step_details = Step(
             journey_id=journey_id,
@@ -240,7 +246,8 @@ def save_step(journey_id):
             event_type=data["eventType"],
             name=data.get("name", ""),
             element=data["element"],
-            elements_chain=data["elementsChain"],
+            elements_chain=elements_chain,
+            x_path=generated_xpath,
             screen_path=screenshot_url,
             index=data["index"]
         )
@@ -320,11 +327,12 @@ def save_journey_first_last_step(journey_id):
         # Extract required fields
         first_url = start_step.url
 
-        # Parse the JSON string stored in last_step.element
+        # Parse the JSON string stored in last_step.element (if it exists)
         element_data = json.loads(last_step.element) if last_step.element else {}
-        # Extract eventType and xpath from the JSON object
-        event_type = element_data.get("eventType", "")
-        xpath = element_data.get("xpath", "")
+        # Extract eventType from the JSON object, fallback to step's event_type
+        event_type = element_data.get("eventType", last_step.event_type)
+        # Use x_path field if available, otherwise generate from elements_chain
+        xpath = last_step.x_path if last_step.x_path else elements_chain_to_xpath(last_step.elements_chain)
 
         # Create the last_step_data structure
         last_step_data = {
@@ -418,18 +426,20 @@ def update_journey_status(journey_id):
             first_step_data = {
                 "url": first_step.url,
                 "eventType": first_step.event_type,
-                "xpath": json.loads(first_step.element).get("xpath"),
+                "xpath": first_step.x_path if first_step.x_path else elements_chain_to_xpath(first_step.elements_chain),
                 "elementsChain": first_step.elements_chain
             }
             journey.first_step = json.dumps(first_step_data)
 
         if last_step:
-            last_step_data = (
-                f'{{"url":"{last_step.url}", '
-                f'"eventType":"{last_step.event_type}", '
-                f'"xpath":"{json.loads(last_step.element).get("xpath")}", '
-                f'"elementsChain":"{last_step.elements_chain}"}}'
-            )
+            # Generate xpath if not already available
+            last_step_xpath = last_step.x_path if last_step.x_path else elements_chain_to_xpath(last_step.elements_chain)
+            last_step_data = {
+                "url": last_step.url,
+                "eventType": last_step.event_type,
+                "xpath": last_step_xpath,
+                "elementsChain": last_step.elements_chain
+            }
             journey.last_step = json.dumps(last_step_data)
 
     journey.status = JourneyLiveStatus[new_status]

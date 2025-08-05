@@ -415,12 +415,12 @@ def update_journey_status(journey_id):
         last_step = steps[-1]
 
         if first_step:
-            first_step_data = (
-                f'{{"url":"{first_step.url}", '
-                f'"eventType":"{first_step.event_type}", '
-                f'"xpath":"{json.loads(first_step.element).get("xpath")}", '
-                f'"elementsChain":"{first_step.elements_chain}"}}'
-            )
+            first_step_data = {
+                "url": first_step.url,
+                "eventType": first_step.event_type,
+                "xpath": json.loads(first_step.element).get("xpath"),
+                "elementsChain": first_step.elements_chain
+            }
             journey.first_step = json.dumps(first_step_data)
 
         if last_step:

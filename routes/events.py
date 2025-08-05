@@ -1,6 +1,7 @@
 from flask import request, jsonify, Blueprint
 from db import db
 from models.customer_journey import RawEvent, Account
+from utils.element_chain_utils import elements_chain_to_xpath
 import re
 
 events_blueprint = Blueprint('events', __name__)
@@ -33,6 +34,9 @@ def receive_posthog_event():
     else:
         return jsonify({"status": "error", "message": f"Account with apiKey {api_key} not found"}), 404
 
+    # Generate XPath from elements_chain
+    generated_xpath = elements_chain_to_xpath(elements_chain) if elements_chain else ""
+
     raw_event = RawEvent(
         id=data.get("uuid"),
         session_id=data.get("session_id"),
@@ -43,6 +47,7 @@ def receive_posthog_event():
         pathname=normalized_pathname,
         current_url=data.get("current_url"),
         elements_chain=elements_chain,
+        x_path=generated_xpath,
         timestamp=data.get("timestamp")
     )
 

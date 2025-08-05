@@ -220,6 +220,7 @@ class RawEvent(db.Model):
     pathname = db.Column(db.String(255), nullable=True)
     current_url = db.Column("currentUrl", db.String(255), nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    x_path = db.Column("xPath", db.Text, nullable=True)
     timestamp = db.Column(db.DateTime, nullable=True)
     processed = db.Column(db.Boolean, default=False)  # track if the event has been processed
     processed_ideal_path = db.Column(db.Boolean, default=False)

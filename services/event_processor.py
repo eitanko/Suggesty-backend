@@ -4,6 +4,17 @@ from models.customer_journey import CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
 import pandas as pd
 import json
+import fnmatch  # For wildcard URL matching
+
+
+def url_matches_pattern(event_url, pattern_url):
+    """
+    Check if an event URL matches a pattern URL with wildcards.
+    Examples:
+    - url_matches_pattern("http://localhost:3001/todos/3", "http://localhost:*/todos/*") -> True
+    - url_matches_pattern("http://example.com/users/123", "http://example.com/users/*") -> True
+    """
+    return fnmatch.fnmatch(event_url, pattern_url)
 
 
 # Function to process raw events and update customer journeys
@@ -29,6 +40,8 @@ def process_raw_events(session: Session):
         'raw_event_obj': event  # actual object we'll update later
     } for event in unprocessed_raw_events])
 
+    print(f"[DEBUG] Found {len(unprocessed_raw_events)} unprocessed raw events")
+
     # STEP 2 — LOAD IDEAL JOURNEYS
 
     # We now fetch all active "ideal journeys".
@@ -46,6 +59,8 @@ def process_raw_events(session: Session):
         'total_steps': len(journey.steps)  # so we know when a journey is complete
     } for journey in active_ideal_journeys])
 
+    print(f"[DEBUG] Found {len(active_ideal_journeys)} active ideal journeys")
+
     # STEP 3 — PROCESS EACH RAW EVENT
 
     from collections import defaultdict
@@ -55,12 +70,20 @@ def process_raw_events(session: Session):
     # Now we iterate through each raw event that hasn't been processed yet.
     # For each event, we'll first check if it matches the beginning of any ideal journey
     # Then we'll also check if this user is currently in the middle of a journey and whether the event is a next step.
+    
+    print(f"[DEBUG] Processing {len(raw_events_df)} raw events against {len(ideal_journeys_df)} ideal journeys")
+    
     for index, raw_event_row in raw_events_df.iterrows():
         # Accessing the original event object, and the values we need to compare
         raw_event = raw_event_row['raw_event_obj']
         event_distinct_id = raw_event_row['distinct_id']
         event_url = raw_event_row['url']
         event_elements_chain = raw_event_row['elements_chain']
+
+        print(f"\n[DEBUG] Processing event {raw_event.id}:")
+        print(f"  User: {event_distinct_id}")
+        print(f"  URL: {event_url}")
+        print(f"  Elements chain: {event_elements_chain}")
 
         event_handled = False  # flag to track if this event has been processed in 3.1 or 3.3
 
@@ -82,11 +105,46 @@ def process_raw_events(session: Session):
                 continue  # Don’t process this event further
 
             # Match event with first step of the ideal journey
-            first_step_url = first_step.get("url")
-            first_step_elements_chain = first_step.get("elementsChain")
+            first_step = journey_row['first_step']
+            
+            # Debug: Let's see what we're working with
+            print(f"[DEBUG] Raw first_step type: {type(first_step)}")
+            print(f"[DEBUG] Raw first_step value: {first_step}")
+            
+            # Parse the JSON string and extract what we need
+            try:
+                # Just parse the JSON directly - no need to strip quotes now
+                parsed_step = json.loads(first_step)
+                print(f"[DEBUG] Successfully parsed - type: {type(parsed_step)}")
+            except Exception as e:
+                print(f"[ERROR] JSON parsing failed: {e}")
+                print(f"[ERROR] Raw data: {first_step}")
+                continue
+                
+            first_step_url = parsed_step.get("url")
+            first_step_elements_chain = parsed_step.get("elementsChain")
 
-            # Check if the url and elements_chain match the first step of the ideal journey
-            if first_step_url == event_url and compare_elements(first_step_elements_chain, event_elements_chain):
+            # DEBUG: Print comparison details
+            print(f"[DEBUG] Journey {journey_id} - Comparing:")
+            print(f"  Event URL: '{event_url}'")
+            print(f"  First step URL: '{first_step_url}'")
+            
+            # Use wildcard matching for URLs
+            url_match = url_matches_pattern(event_url, first_step_url)
+            print(f"  URL match (with wildcards): {url_match}")
+            # print(f"  Event elements_chain: {event_elements_chain}")
+            print(f"  First step elements_chain: {first_step_elements_chain}")
+            
+            # Compare elements - only if both exist
+            elements_match = False
+            if first_step_elements_chain and event_elements_chain:
+                elements_match = compare_elements(first_step_elements_chain, event_elements_chain)
+            
+            print(f"  Elements match: {elements_match}")
+
+            # Check if BOTH the url and elements_chain match
+            if url_match and elements_match:
+                print(f"[DEBUG] ✅ MATCH FOUND! Creating new CustomerJourney for journey {journey_id}")
                 # Match found — start a new CustomerJourney
                 new_customer_journey = CustomerJourney(
                     session_id=raw_event.session_id,

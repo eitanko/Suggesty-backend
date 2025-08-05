@@ -78,7 +78,7 @@ def process_raw_events(session: Session):
             ).first()
 
             if existing_cj:
-                print( f"[INFO] Skipping new CJ — user {event_distinct_id} already has an active journey {existing_cj.id} for template {journey_id}")
+                # print( f"[INFO] Skipping new CJ — user {event_distinct_id} already has an active journey {existing_cj.id} for template {journey_id}")
                 continue  # Don’t process this event further
 
             # Match event with first step of the ideal journey
@@ -121,8 +121,8 @@ def process_raw_events(session: Session):
                 )
                 session.add(event)
 
-                print(
-                    f"[INFO] Created new CustomerJourney for user {event_distinct_id} with journey template {journey_id} at event {raw_event.id}")
+                # print(
+                    # f"[INFO] Created new CustomerJourney for user {event_distinct_id} with journey template {journey_id} at event {raw_event.id}")
                 event_handled = True  # mark event as handled (if not handled means we can ignore it)
                 continue  # check if this event matches any other journeys
 
@@ -130,7 +130,7 @@ def process_raw_events(session: Session):
         if event_handled:
             raw_event.processed_ideal_path = True
             any_changes_made = True
-            print(f"[INFO] Skipping 3.2 and 3.3 — event {raw_event.id} already processed in 3.1")
+            # print(f"[INFO] Skipping 3.2 and 3.3 — event {raw_event.id} already processed in 3.1")
             continue
 
         # STEP 3.2 — CHECK IF THIS USER IS ALREADY IN A JOURNEY
@@ -145,7 +145,7 @@ def process_raw_events(session: Session):
         # ✅ Early exit: if the user has no active CJs, No existing journey and didn't start a new one — skip further processing
         if not active_cjs_for_user and not event_handled:
             #and event.customer_journey_id not in [cj.journey_id for cj in active_cjs_for_user]:
-            print(f"[INFO] Skipping event {raw_event.id} — not part of any journey")
+            # print(f"[INFO] Skipping event {raw_event.id} — not part of any journey")
             raw_event.processed_ideal_path = True
             any_changes_made = True
             continue  # Skip to next raw event
@@ -201,14 +201,14 @@ def process_raw_events(session: Session):
                     cj.end_time = raw_event.timestamp  # Update end_time when journey is completed
                     cj.completion_type = CompletionType.DIRECT if not cj_took_extra_steps[cj.id] else CompletionType.INDIRECT
 
-                    print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")
+                    # print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")
                 else:
                     cj.current_step_index += 1
-                    print(f"[INFO] Updated CJ {cj.id}: moved to step {cj.current_step_index}")
+                    # print(f"[INFO] Updated CJ {cj.id}: moved to step {cj.current_step_index}")
 
                 session.add(cj)
 
-            print(f"[INFO] Added {'MATCHED' if is_match else 'UNMATCHED'} event {raw_event.id} to journey {cj.id}")
+            # print(f"[INFO] Added {'MATCHED' if is_match else 'UNMATCHED'} event {raw_event.id} to journey {cj.id}")
 
             continue  # check if this event matches any other journeys
 
@@ -217,7 +217,7 @@ def process_raw_events(session: Session):
             raw_event.processed_ideal_path = True
             raw_event.account_id = 1
             any_changes_made = True
-            print(f"[INFO] Marked raw event {raw_event.id} as processed")
+            # print(f"[INFO] Marked raw event {raw_event.id} as processed")
 
         # STEP 4 — MARK EVENT AS PROCESSED
 
@@ -227,10 +227,10 @@ def process_raw_events(session: Session):
         if event_handled:
             raw_event.processed_ideal_path = True
             any_changes_made = True
-            print(f"[INFO] Marked raw event {raw_event.id} as processed")
+            # print(f"[INFO] Marked raw event {raw_event.id} as processed")
             continue  # skip to next raw event
 
-        print(f"[INFO] Marked raw event {raw_event.id} as processed")
+        # print(f"[INFO] Marked raw event {raw_event.id} as processed")
 
     # STEP 5 — SAVE EVERYTHING TO DATABASE
 

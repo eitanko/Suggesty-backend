@@ -75,24 +75,24 @@ def run_report():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/api/classify_button", methods=["POST"])
+# @app.route("/api/classify_button", methods=["POST"])
 # this code is used to classify a button click event based on the elements chain sending the data to an ai classifier.
 # based on this we can tell if a form has been submitted, a button was used for navigation.
-def classify_button_api():
-    data = request.json
-
-    try:
-        label = classify_button(data)
-
-        return jsonify({
-            "label": label,
-            "success": True
-        })
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "success": False
-        }), 500
+# def classify_button_api():
+#     data = request.json
+#
+#     try:
+#         label = classify_button(data)
+#
+#         return jsonify({
+#             "label": label,
+#             "success": True
+#         })
+#     except Exception as e:
+#         return jsonify({
+#             "error": str(e),
+#             "success": False
+#         }), 500
 
 if __name__ == '__main__':
     # Run the report here if you want to trigger the function directly

@@ -10,17 +10,27 @@ events_blueprint = Blueprint('events', __name__)
 def receive_posthog_event():
     # Get the JSON data from the request
     data = request.get_json()
-    elements_chain = data.get("elements_chain")
+    elements_chain = data.get("elements_chain") or ""  # Default to empty string if None
     distinct_id = data.get("distinct_id")
     event_type = data.get("event_type")
     api_key= data.get("apiKey")
     pathname = data.get("pathname")
-    normalized_pathname = re.sub(r'/\d+', '/#', pathname)
+    normalized_pathname = re.sub(r'/\d+', '/#', pathname) if pathname else ""
 
-    # Check if the event contains the admin attribute
-    if "attr__data-is-admin" in elements_chain and "true" in elements_chain:
+    # Check if the event contains the admin attribute (only if elements_chain exists)
+    if elements_chain and "attr__data-is-admin" in elements_chain and "true" in elements_chain:
         print(f"Ignoring admin event from distinctId: {distinct_id}")
         return jsonify({"status": "ignored", "message": "Admin event ignored"}), 200  # Return a valid response for ignored events
+
+    # Handle different event types appropriately
+    # For pageview events, event_type might be None, so we derive it from the event name
+    if not event_type and data.get("event"):
+        if data.get("event") == "$pageview":
+            event_type = "pageview"
+        elif data.get("event") == "$pageleave":
+            event_type = "pageleave"
+        else:
+            event_type = data.get("event", "unknown")
 
     # Only process events of type 'click'
     # if event_type != "click":
@@ -36,6 +46,8 @@ def receive_posthog_event():
 
     # Generate XPath from elements_chain
     generated_xpath = elements_chain_to_xpath(elements_chain) if elements_chain else ""
+
+    print(f"[DEBUG] Processing event: {data.get('event')} | event_type: {event_type} | elements_chain length: {len(elements_chain) if elements_chain else 0}")
 
     raw_event = RawEvent(
         id=data.get("uuid"),

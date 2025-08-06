@@ -51,13 +51,14 @@ class Step(db.Model):
     name = db.Column(db.String(255), nullable=True)  # Optional name for the step
     element = db.Column(db.String(50), nullable=False)
     elements_chain = db.Column("elementsChain", db.String(255))
+    x_path = db.Column("xPath", db.String(500), nullable=True) 
     screen_path = db.Column("screenPath", db.String(255))
     index = db.Column(db.Integer, nullable=False)
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
 
     journey = db.relationship("Journey", back_populates="steps")
 
-    def __init__(self, journey_id, url, page_title, event_type, name, element, elements_chain, screen_path, index):
+    def __init__(self, journey_id, url, page_title, event_type, name, element, elements_chain, x_path, screen_path, index):
         self.journey_id = journey_id
         self.url = url
         self.page_title = page_title
@@ -65,6 +66,7 @@ class Step(db.Model):
         self.name = name
         self.element = element
         self.elements_chain = elements_chain
+        self.x_path = x_path
         self.screen_path = screen_path
         self.index = index
 
@@ -190,19 +192,21 @@ class Event(db.Model):
     page_title = db.Column("pageTitle", db.String(255), nullable=False)
     element = db.Column(db.String(255), nullable=False)
     elements_chain = db.Column("elementsChain", db.String(255))
+    x_path = db.Column("xPath", db.String(500), nullable=True) 
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey("CustomerJourney.id"), nullable=False)
     is_match = db.Column(db.Boolean, default=False)  # Column to track if the event matches the journey step
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, customer_journey_id=None, timestamp=None, person_id=None, is_match=False):
+    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, x_path, customer_journey_id=None, timestamp=None, person_id=None, is_match=False):
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
         self.page_title = page_title  # Removed the comma that turned it into a tuple
         self.element = element
         self.elements_chain = elements_chain
+        self.x_path = x_path
         self.customer_journey_id = customer_journey_id
         self.timestamp = timestamp or datetime.utcnow()
         self.person_id = person_id  # Now optional
@@ -315,6 +319,7 @@ class EventsUsage(db.Model):
     pathname = db.Column(db.String(512), nullable=False)
     event_type = db.Column("eventType", db.String(255), nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    x_path = db.Column("xPath", db.String(500), nullable=True) 
     total_events = db.Column("totalEvents", db.Integer, default=0)
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
     created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
@@ -343,6 +348,8 @@ class FormUsage(db.Model):
     last_field = db.Column("lastField",String, nullable=True)
     submit_text = db.Column("submitText",String, nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
+    x_path = db.Column("xPath", db.String(500), nullable=True) 
+
     created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
 

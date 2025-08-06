@@ -83,7 +83,15 @@ def process_raw_events(session: Session):
         print(f"\n[DEBUG] Processing event {raw_event.id}:")
         print(f"  User: {event_distinct_id}")
         print(f"  URL: {event_url}")
+        print(f"  Event Type: {raw_event.event_type}")
         print(f"  Elements chain: {event_elements_chain}")
+
+        # Skip pageview and pageleave events - they don't participate in journey matching
+        if raw_event.event_type in ['pageview', 'pageleave']:
+            print(f"[INFO] Skipping {raw_event.event_type} event - not part of journey matching")
+            raw_event.processed_ideal_path = True
+            any_changes_made = True
+            continue
 
         event_handled = False  # flag to track if this event has been processed in 3.1 or 3.3
 
@@ -135,9 +143,13 @@ def process_raw_events(session: Session):
             # print(f"  Event elements_chain: {event_elements_chain}")
             print(f"  First step elements_chain: {first_step_elements_chain}")
             
-            # Compare elements - only if both exist
+            # Compare elements - only if both exist and it's not a pageview event
             elements_match = False
-            if first_step_elements_chain and event_elements_chain:
+            if raw_event.event_type == 'pageview':
+                # For pageview events, only match on URL (no element interaction)
+                elements_match = True  # Skip element matching for pageviews
+                print(f"  Pageview event - skipping element comparison")
+            elif first_step_elements_chain and event_elements_chain:
                 elements_match = compare_elements(first_step_elements_chain, event_elements_chain)
             
             print(f"  Elements match: {elements_match}")

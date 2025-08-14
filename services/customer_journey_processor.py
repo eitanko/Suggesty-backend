@@ -6,6 +6,7 @@ from sqlalchemy.sql.base import elements
 from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event
 from models.customer_journey import FrictionType, JourneyFriction, CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
+from utils.url_utils import normalize_url_for_matching  # Import URL normalization utility
 from collections import defaultdict
 
 def calculate_completion_times(journey_groups):
@@ -46,6 +47,7 @@ def calculate_completion_times(journey_groups):
 def insert_journey_analytics(
     session: Session,
     journey_id: str,
+    account_id: int,  # Add account_id parameter
     completion_rate: float,
     total_completions: int,
     total_users: int,
@@ -65,13 +67,14 @@ def insert_journey_analytics(
 
     if journey_analytics:
         # the record exists, update it
-        print(f"Updating JourneyAnalytics for journey {journey_id}")
+        # print(f"Updating JourneyAnalytics for journey {journey_id}")
         journey_analytics.completion_rate=completion_rate,
         journey_analytics.total_completions=total_completions,
         journey_analytics.indirect_rate=indirect_rate,
         journey_analytics.completion_time_ms=completion_time_ms,
         journey_analytics.total_steps=total_steps,
         journey_analytics.total_users = total_users,
+        journey_analytics.account_id = account_id,  # Add account_id
         journey_analytics.drop_off_distribution=drop_off_distribution,
         journey_analytics.friction_score=friction_score,
         journey_analytics.frequent_alt_paths=frequent_alt_paths,
@@ -80,9 +83,10 @@ def insert_journey_analytics(
         journey_analytics.updated_at=datetime.utcnow()
     else:
         # If the record doesn't exist, insert a new one
-        print(f"Creating new JourneyAnalytics for journey {journey_id}")
+        print(f"Creating new JourneyAnalytics for jo/urney {journey_id}")
         journey_analytics = JourneyAnalytics(
             journey_id=journey_id,
+            account_id=account_id,  # Add account_id
             completion_rate=completion_rate,
             total_completions=total_completions,
             total_users=total_users,
@@ -110,7 +114,7 @@ def calculate_completion_rate(journey_groups):
     for journey_id, journeys in journey_groups.items():
         # Ensure we have a list of journeys
         if not isinstance(journeys, list):
-            print(f"Skipping journey_id {journey_id}: not a list of journeys.")
+            # print(f"Skipping journey_id {journey_id}: not a list of journeys.")
             continue
 
         total_journeys = len(journeys)
@@ -200,9 +204,14 @@ def get_admin_path_for_journey(session, journey_id: int):
     steps = (
         session.query(Step)
         .filter(Step.journey_id == journey_id)
-        .order_by(Step.index)
+        .order_by(Step.created_at) 
         .all()
     )
+
+    # Debug: Print the actual order from database
+    print(f"Debug - Steps from DB for journey {journey_id}:")
+    # for step in steps:
+    #     print(f"  Index: {step.index}, Name: {step.name}, Element: {step.elements_chain[:50]}...")
 
     return [
         {
@@ -210,6 +219,7 @@ def get_admin_path_for_journey(session, journey_id: int):
             "name": step.name,
             "url": step.url,
             "element": step.elements_chain,
+            "xPath": step.x_path,
             "timestamp": step.created_at
         }
         for i, step in enumerate(steps)
@@ -233,6 +243,7 @@ def get_event_sequence_for_customer(session, journey):
         {
             "url": event.url,
             "element": event.elements_chain,
+            "xPath": event.x_path,
             "timestamp": int(event.timestamp.timestamp() * 1000), # Convert to milliseconds
             "is_match": event.is_match,
             "session_id": event.session_id,
@@ -316,9 +327,19 @@ def generate_step_insights_from_ideal_path(
                     break  # stop after first matching transition
 
     # Step 3: Assemble step_insights
-    step_insights = {}
+    # Use OrderedDict to ensure proper ordering when serialized to JSON
+    from collections import OrderedDict
+    step_insights = OrderedDict()
 
-    for i, step in enumerate(ideal_path_steps):
+    # Sort ideal_path_steps by step index to ensure correct order
+    sorted_steps = sorted(ideal_path_steps, key=lambda x: x.get("step", 0))
+    
+    # Debug: Print the sorted order
+    print(f"Debug - Sorted steps order:")
+    for i, step in enumerate(sorted_steps):
+        print(f"  Position {i+1}: Step {step.get('step')}, Element: {step['xPath'][:50]}...")
+
+    for i, step in enumerate(sorted_steps):
         key = (step["url"], step["element"])
         stats = step_stats.get(key, {
             "times": [],
@@ -365,15 +386,17 @@ def generate_step_insights_from_ideal_path(
             })
 
         step_insights[f"step_{i+1}"] = {
+            "step_index": step.get("step", i+1),  # Add explicit step index for reference
             "name": step.get("name"),
             "url": step["url"],
+            "xPath": step.get("xPath"),  # Changed from x_path to xPath
             "element": step["element"],
             "avg_time_ms": round(avg_time),
             "drop_off_rate": round(drop_off_rate, 2),
             "repeated_rate": round(repeated_rate, 2),
             "anomalies": anomalies,
             "paths": {
-                "next_step": f"step_{i + 2}" if i < len(ideal_path_steps) - 1 else None,
+                "next_step": f"step_{i + 2}" if i < len(sorted_steps) - 1 else None,
                 "indirect_transitions": {},
                 "drop_off": False
             },
@@ -444,15 +467,18 @@ def fetch_customer_journeys_by_journey_id(session: Session):
 
     return grouped_by_journey_id
 
-def upsert_journey_friction(session, journey_id, event_name, url, event_details, session_id, friction_type, friction_rate, total_users, volume):
+def upsert_journey_friction(session, journey_id, event_name, url, event_details, session_id, friction_type, friction_rate, total_users, volume, account_id):
     """
     Upserts a JourneyFriction record by either updating an existing entry or inserting a new one.
     Matching is done on journey_id, event_name, url, event_details, and friction_type.
     """
+    # Normalize the URL to handle dynamic IDs and ports
+    normalized_url = normalize_url_for_matching(url)
+    
     existing = session.query(JourneyFriction).filter(
         JourneyFriction.journey_id == journey_id,
         JourneyFriction.event_name == event_name,
-        JourneyFriction.url == url,
+        JourneyFriction.url == normalized_url,  # Use normalized URL for matching
         JourneyFriction.event_details == event_details,
         JourneyFriction.friction_type == friction_type.value  # .value if it's an Enum
     ).first()
@@ -462,23 +488,26 @@ def upsert_journey_friction(session, journey_id, event_name, url, event_details,
         existing.friction_rate = friction_rate
         existing.total_users = total_users
         existing.volume = volume
+        existing.account_id = account_id  # Add account_id
         existing.updated_at = datetime.utcnow()
-        print(f"Updated JourneyFriction for {event_name} on {url}")
+        # print(f"Updated JourneyFriction for {event_name} on {normalized_url}")
     else:
         # Insert new row
         new_entry = JourneyFriction(
             journey_id=journey_id,
             event_name=event_name,
-            url=url,
+            url=normalized_url,  # Store normalized URL
             event_details=event_details,
             session_id=session_id,
             friction_type=friction_type,
-            volume=volume
+            volume=volume,
+            user_dismissed=False  # Add the missing required parameter
         )
         new_entry.friction_rate = friction_rate
         new_entry.total_users = total_users
+        new_entry.account_id = account_id  # Add account_id
         session.add(new_entry)
-        print(f"Inserted new JourneyFriction for {event_name} on {url}")
+        # print(f"Inserted new JourneyFriction for {event_name} on {url}")
 
 def calculate_indirect_completion_rate(journey_groups):
     """
@@ -525,12 +554,30 @@ def extract_frequent_alternatives(indirect_completed, session) -> Dict[str, List
 
     return result
 
-def process_journey_metrics(session: Session):
+def process_journey_metrics(session: Session, account_id: int = None):
     """
     Process metrics for each journey_id: store aggregate friction in JourneyFriction,
     and update JourneyAnalytics with a step_insights JSON based on the ideal path.
+    
+    Args:
+        session: Database session
+        account_id: Account ID. If None, will try to determine from journeys
     """
     journey_groups = fetch_customer_journeys_by_journey_id(session)
+    
+    # If no account_id provided, try to get it from the first journey's account
+    if account_id is None:
+        if journey_groups:
+            # Get account_id from first journey found
+            first_journey_group = next(iter(journey_groups.values()))
+            if first_journey_group:
+                # Assuming CustomerJourney has account_id field
+                account_id = getattr(first_journey_group[0], 'account_id', 1)
+            else:
+                account_id = 1  # Default fallback
+        else:
+            account_id = 1  # Default fallback
+    
     completion_rates = calculate_completion_rate(journey_groups)
     total_completed = calculate_completed_journeys(journey_groups)
     completion_times = calculate_completion_times(journey_groups)
@@ -546,6 +593,7 @@ def process_journey_metrics(session: Session):
 
         # 🔁 REPEATED events (for JourneyFriction)
         repeated_events_by_journey = calculate_repeated_behavior_all_journeys(customer_journeys, session)
+        
         aggregated_repeats = defaultdict(lambda: {"volume": 0, "total_users": total_users})
         for step, events in repeated_events_by_journey.items():
             for element_details, url, session_id, _ in events:
@@ -555,7 +603,7 @@ def process_journey_metrics(session: Session):
             upsert_journey_friction(
                 session, str(journey_id), "repeated", url, element_details, session_id,
                 FrictionType.REPEATED, (data["volume"] / total_users) * 100,
-                total_users, data["volume"]
+                total_users, data["volume"], account_id  # Add account_id
             )
 
         # 📉 DROP-OFF events (for JourneyFriction)
@@ -570,7 +618,7 @@ def process_journey_metrics(session: Session):
             upsert_journey_friction(
                 session, str(journey_id), "drop_off", url, element_details, session_id,
                 FrictionType.DROP_OFF, (volume / total_users) * 100,
-                total_users, volume
+                total_users, volume, account_id  # Add account_id
             )
 
         repeated_lookup = {
@@ -605,7 +653,8 @@ def process_journey_metrics(session: Session):
                 friction_type=FrictionType.DELAY,
                 friction_rate=(delay_ms / total_users) * 100,  # Adjust calculation as needed
                 total_users=total_users,
-                volume=delay_ms
+                volume=delay_ms,
+                account_id=account_id  # Add account_id
             )
 
         indirect_completed = [j for j in completed_journeys if j.completion_type == CompletionType.INDIRECT]
@@ -615,6 +664,7 @@ def process_journey_metrics(session: Session):
         insert_journey_analytics(
             session=session,
             journey_id=str(journey_id),
+            account_id=account_id,  # Pass account_id
             completion_rate=completion_rate,
             total_completions=total_completions,
             total_users=total_users,
@@ -628,6 +678,24 @@ def process_journey_metrics(session: Session):
         )
 
     return completion_rates
+
+def process_journey_metrics_for_posthog(session: Session, api_key: str = None):
+    """
+    Wrapper function for PostHog calls that determines account_id from API key or context.
+    """
+    # Method 1: Get account_id from API key
+    if api_key:
+        from models import Account
+        account = session.query(Account).filter_by(api_key=api_key).first()
+        if account:
+            account_id = account.id
+        else:
+            raise ValueError(f"Invalid API key: {api_key}")
+    else:
+        # Method 2: Auto-determine from existing data
+        account_id = None
+    
+    return process_journey_metrics(session, account_id)
 
 
 

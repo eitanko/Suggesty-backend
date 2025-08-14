@@ -1,20 +1,9 @@
 from sqlalchemy.orm import Session
 from models import RawEvent, Event, Journey, CustomerJourney, JourneyLiveStatus, JourneyStatusEnum, Account
 from models.customer_journey import CompletionType
-from utils import compare_elements  # a custom function to check if two element chains are equivalent
+from utils import compare_elements, urls_match_pattern  # Import URL utilities
 import pandas as pd
 import json
-import fnmatch  # For wildcard URL matching
-
-
-def url_matches_pattern(event_url, pattern_url):
-    """
-    Check if an event URL matches a pattern URL with wildcards.
-    Examples:
-    - url_matches_pattern("http://localhost:3001/todos/3", "http://localhost:*/todos/*") -> True
-    - url_matches_pattern("http://example.com/users/123", "http://example.com/users/*") -> True
-    """
-    return fnmatch.fnmatch(event_url, pattern_url)
 
 
 # Function to process raw events and update customer journeys
@@ -36,6 +25,7 @@ def process_raw_events(session: Session):
         'distinct_id': event.distinct_id,  # user ID
         'url': event.current_url,  # page the event occurred on
         'elements_chain': event.elements_chain,  # DOM path of the clicked element
+        'x_path': event.x_path,  # XPath of the clicked element (already stored)
         'timestamp': event.timestamp,  # when it happened
         'raw_event_obj': event  # actual object we'll update later
     } for event in unprocessed_raw_events])
@@ -49,6 +39,11 @@ def process_raw_events(session: Session):
     # These are used as templates to compare against user behavior.
     active_ideal_journeys = session.query(Journey).filter_by(status=JourneyLiveStatus.ACTIVE).all()
 
+    # Sort steps by creation time for each journey to ensure proper order
+    for journey in active_ideal_journeys:
+        journey.steps = sorted(journey.steps, key=lambda step: step.created_at)
+
+    
     # Convert the list of ideal journey objects to a DataFrame for easier iteration.
     # Each row will contain the journey’s ID, its first step, its full step list, and how many total steps it has.
     # We're storing all of that in a structured table to efficiently loop through it and make comparisons.
@@ -79,15 +74,17 @@ def process_raw_events(session: Session):
         event_distinct_id = raw_event_row['distinct_id']
         event_url = raw_event_row['url']
         event_elements_chain = raw_event_row['elements_chain']
+        event_xpath = raw_event_row['x_path']  # Use stored XPath from RawEvent
 
-        print(f"\n[DEBUG] Processing event {raw_event.id}:")
-        print(f"  User: {event_distinct_id}")
-        print(f"  URL: {event_url}")
-        print(f"  Event Type: {raw_event.event_type}")
-        print(f"  Elements chain: {event_elements_chain}")
+        # print(f"\n[DEBUG] Processing event {raw_event.id}:")
+        # print(f"  User: {event_distinct_id}")
+        # print(f"  URL: {event_url}")
+        # print(f"  Event Type: {raw_event.event_type}")
+        # # print(f"  Elements chain: {event_elements_chain}")
+        # print(f"  XPath: {event_xpath}")
 
         # Skip pageview and pageleave events - they don't participate in journey matching
-        if raw_event.event_type in ['pageview', 'pageleave']:
+        if raw_event.event_type in ['pageview', 'pageleave', 'change', 'submit']:
             print(f"[INFO] Skipping {raw_event.event_type} event - not part of journey matching")
             raw_event.processed_ideal_path = True
             any_changes_made = True
@@ -99,7 +96,7 @@ def process_raw_events(session: Session):
 
         for journey_index, journey_row in ideal_journeys_df.iterrows():
             journey_id = journey_row['journey_id']
-            first_step = journey_row['first_step']  # No json.loads() needed
+            first_step = journey_row['first_step'] 
 
             # Skip if the user already has an active CustomerJourney for this template
             existing_cj = session.query(CustomerJourney).filter_by(
@@ -116,43 +113,38 @@ def process_raw_events(session: Session):
             first_step = journey_row['first_step']
             
             # Debug: Let's see what we're working with
-            print(f"[DEBUG] Raw first_step type: {type(first_step)}")
-            print(f"[DEBUG] Raw first_step value: {first_step}")
+            # print(f"[DEBUG] Raw first_step type: {type(first_step)}")
+            # print(f"[DEBUG] Raw first_step value: {first_step}")
             
             # Parse the JSON string and extract what we need
             try:
                 # Just parse the JSON directly - no need to strip quotes now
                 parsed_step = json.loads(first_step)
-                print(f"[DEBUG] Successfully parsed - type: {type(parsed_step)}")
+                # print(f"[DEBUG] Successfully parsed - type: {type(parsed_step)}")
             except Exception as e:
-                print(f"[ERROR] JSON parsing failed: {e}")
-                print(f"[ERROR] Raw data: {first_step}")
+                # print(f"[ERROR] JSON parsing failed: {e}")
+                # print(f"[ERROR] Raw data: {first_step}")
                 continue
                 
             first_step_url = parsed_step.get("url")
             first_step_elements_chain = parsed_step.get("elementsChain")
-
-            # DEBUG: Print comparison details
-            print(f"[DEBUG] Journey {journey_id} - Comparing:")
-            print(f"  Event URL: '{event_url}'")
-            print(f"  First step URL: '{first_step_url}'")
+            first_step_xpath = parsed_step.get("xpath")  # Get xpath from stored step data
             
-            # Use wildcard matching for URLs
-            url_match = url_matches_pattern(event_url, first_step_url)
-            print(f"  URL match (with wildcards): {url_match}")
-            # print(f"  Event elements_chain: {event_elements_chain}")
-            print(f"  First step elements_chain: {first_step_elements_chain}")
+            # URLs are already normalized at entry point, so use directly
+            url_match = urls_match_pattern(event_url, first_step_url)
+            print(f"  URL match: {url_match}")
             
-            # Compare elements - only if both exist and it's not a pageview event
-            elements_match = False
-            if raw_event.event_type == 'pageview':
-                # For pageview events, only match on URL (no element interaction)
-                elements_match = True  # Skip element matching for pageviews
-                print(f"  Pageview event - skipping element comparison")
-            elif first_step_elements_chain and event_elements_chain:
-                elements_match = compare_elements(first_step_elements_chain, event_elements_chain)
+            # Compare XPath 
+            elements_match = False  # Default to False
+            if first_step_xpath and event_xpath:
+                # Use XPath comparison instead of elements_chain
+                elements_match = (first_step_xpath == event_xpath)
+                print(f"  XPath comparison: {elements_match}")
+            else:
+                print(f"  XPath comparison skipped - first_step_xpath: {bool(first_step_xpath)}, event_xpath: {bool(event_xpath)}")
             
-            print(f"  Elements match: {elements_match}")
+            # print(f"  Final elements match: {elements_match}")
+            # print(f"  Both URL and elements match: {url_match and elements_match}")
 
             # Check if BOTH the url and elements_chain match
             if url_match and elements_match:
@@ -162,7 +154,7 @@ def process_raw_events(session: Session):
                     session_id=raw_event.session_id,
                     person_id=event_distinct_id,
                     journey_id=journey_id,
-                    current_step_index=1,
+                    current_step_index=0,  # Start at 0, will be incremented to 1 after first match
                     status=JourneyStatusEnum.IN_PROGRESS,
                     start_time=raw_event.timestamp,
                     end_time=raw_event.timestamp,
@@ -183,7 +175,8 @@ def process_raw_events(session: Session):
                     element="",  # Same here
                     event_type=raw_event.event_type,
                     elements_chain=raw_event.elements_chain,
-                    url=raw_event.current_url,
+                    x_path=raw_event.x_path,  # Use stored XPath from RawEvent
+                    url=raw_event.current_url,  # URL already normalized at entry point
                     customer_journey_id=new_customer_journey.id,
                     session_id=raw_event.session_id,
                     timestamp=raw_event.timestamp,
@@ -191,8 +184,11 @@ def process_raw_events(session: Session):
                 )
                 session.add(event)
 
-                # print(
-                    # f"[INFO] Created new CustomerJourney for user {event_distinct_id} with journey template {journey_id} at event {raw_event.id}")
+                # Increment step index after successful first match
+                new_customer_journey.current_step_index = 1
+                session.add(new_customer_journey)
+
+                print(f"[INFO] Created new CustomerJourney {new_customer_journey.id} for user {event_distinct_id} with journey template {journey_id} at event {raw_event.id}")
                 event_handled = True  # mark event as handled (if not handled means we can ignore it)
                 continue  # check if this event matches any other journeys
 
@@ -222,24 +218,68 @@ def process_raw_events(session: Session):
 
         # STEP 3.3 — SEE IF THIS EVENT MATCHES THE NEXT STEP IN ANY OF THOSE JOURNEYS
 
+        print(f"[DEBUG] Step 3.3: Checking {len(active_cjs_for_user)} active journeys for user {event_distinct_id}")
+
         for cj in active_cjs_for_user:
+            print(f"[DEBUG] Checking CustomerJourney {cj.id} (template {cj.journey_id}) at step {cj.current_step_index}")
+            
             # Fetch the ideal journey that this CustomerJourney is based on
             ideal_journey = next((j for j in active_ideal_journeys if j.id == cj.journey_id), None)
             if not ideal_journey:
+                print(f"[ERROR] Could not find ideal journey {cj.journey_id}")
                 continue  # safety check, shouldn't happen
 
-            took_extra_steps = False
+            # print(f"[DEBUG] Ideal journey {ideal_journey.id} has {len(ideal_journey.steps)} steps total")
+            # for i, step in enumerate(ideal_journey.steps):
+                # print(f"[DEBUG] Step {i}: URL='{step.url}', XPath='{step.x_path}'")
 
             # We need to check if the current step index is within the bounds of the ideal journey
             if cj.current_step_index >= len(ideal_journey.steps):
+                print(f"[DEBUG] Journey {cj.id} already completed - current step {cj.current_step_index} >= total steps {len(ideal_journey.steps)}")
                 continue  # Skip if all steps are already completed
 
-            # Fetch the next expected step in the journey
+            # URLs are already normalized at entry point, so use directly
+            
+            # First, check if this event matches the next expected step
             expected_step = ideal_journey.steps[cj.current_step_index]
+            print(f"[DEBUG] Expected next step {cj.current_step_index}: URL='{expected_step.url}', XPath='{expected_step.x_path}'")
 
-            # Compare the current event with the expected step
-            is_match = expected_step.url == event_url and compare_elements(expected_step.elements_chain,
-                                                                           event_elements_chain)
+            url_match = urls_match_pattern(event_url, expected_step.url)
+            xpath_match = (expected_step.x_path and event_xpath and expected_step.x_path == event_xpath)
+            
+            is_next_step_match = url_match and xpath_match
+            print(f"[DEBUG] Next step match: {is_next_step_match} (URL: {url_match}, XPath: {xpath_match})")
+            
+            # If it doesn't match the next expected step, check if it matches any later step (for indirect completion)
+            later_step_match = None
+            later_step_index = None
+            
+            if not is_next_step_match:
+                print(f"[DEBUG] Checking if event matches any later steps...")
+                for i in range(cj.current_step_index + 1, len(ideal_journey.steps)):
+                    step = ideal_journey.steps[i]
+                    step_url_match = urls_match_pattern(event_url, step.url)
+                    step_xpath_match = (step.x_path and event_xpath and step.x_path == event_xpath)
+                    
+                    if step_url_match and step_xpath_match:
+                        later_step_match = step
+                        later_step_index = i
+                        print(f"[DEBUG] Found match with later step {i}: URL='{step.url}', XPath='{step.x_path}'")
+                        break
+            
+            # Determine the match result
+            if is_next_step_match:
+                is_match = True
+                matched_step_index = cj.current_step_index
+                print(f"[DEBUG] Event matches expected next step {matched_step_index}")
+            elif later_step_match:
+                is_match = True
+                matched_step_index = later_step_index
+                cj_took_extra_steps[cj.id] = True  # Mark as indirect since steps were skipped
+                print(f"[DEBUG] Event matches later step {matched_step_index} - marking as indirect completion")
+            else:
+                is_match = False
+                print(f"[DEBUG] Event does not match any remaining steps in the journey")
 
             # Create the event
             event = Event(
@@ -248,59 +288,61 @@ def process_raw_events(session: Session):
                 element="",
                 event_type=raw_event.event_type,
                 elements_chain=raw_event.elements_chain,
-                url=raw_event.current_url,
+                x_path=raw_event.x_path,  # Use stored XPath from RawEvent
+                url=raw_event.current_url,  # URL already normalized at entry point
                 customer_journey_id=cj.id,
                 session_id=raw_event.session_id,
                 timestamp=raw_event.timestamp,
                 is_match=is_match
             )
             session.add(event)
-
-            if is_match:
-                cj_seen_elements[cj.id].add((event_url, event_elements_chain))
-            else:
-                # Mark as extra step only if this unmatched event was not a previously matched one
-                if (event_url, event_elements_chain) not in cj_seen_elements[cj.id]:
-                    cj_took_extra_steps[cj.id] = True
+            print(f"[DEBUG] Created Event with is_match={is_match} for CustomerJourney {cj.id}")
 
             # If the event matches, update the journey state
             if is_match:
-                if cj.current_step_index == len(ideal_journey.steps) - 1:
-                    cj.status = JourneyStatusEnum.COMPLETED
-                    cj.current_step_index += 1  # Increment the step index to reflect the final step
-                    cj.end_time = raw_event.timestamp  # Update end_time when journey is completed
-                    cj.completion_type = CompletionType.DIRECT if not cj_took_extra_steps[cj.id] else CompletionType.INDIRECT
-
-                    # print(f"[INFO] Journey {cj.id} marked as {cj.completion_type}")
-                else:
+                print(f"[DEBUG] Event matched step {matched_step_index}! Updating journey state...")
+                
+                # Track using XPath if available, otherwise use elements_chain
+                tracking_key = event_xpath if event_xpath else event_elements_chain
+                cj_seen_elements[cj.id].add((event_url, tracking_key))
+                
+                # If we matched the next expected step, advance normally
+                if is_next_step_match:
                     cj.current_step_index += 1
-                    # print(f"[INFO] Updated CJ {cj.id}: moved to step {cj.current_step_index}")
+                    print(f"[DEBUG] Advanced to next step: {cj.current_step_index}")
+                else:
+                    # If we matched a later step, advance to that step + 1
+                    cj.current_step_index = matched_step_index + 1
+                    print(f"[DEBUG] Jumped to step {matched_step_index}, now at: {cj.current_step_index}")
+                
+                # Check if journey is completed
+                if cj.current_step_index >= len(ideal_journey.steps):
+                    cj.status = JourneyStatusEnum.COMPLETED
+                    cj.end_time = raw_event.timestamp
+                    cj.completion_type = CompletionType.DIRECT if not cj_took_extra_steps[cj.id] else CompletionType.INDIRECT
+                    print(f"[INFO] Journey {cj.id} COMPLETED as {cj.completion_type}")
+                else:
+                    print(f"[INFO] Journey {cj.id} progress: {cj.current_step_index}/{len(ideal_journey.steps)} steps completed")
 
                 session.add(cj)
+            else:
+                print(f"[DEBUG] Event did not match any step - marking as extra step")
+                # Mark as extra step only if this unmatched event was not a previously matched one
+                tracking_key = event_xpath if event_xpath else event_elements_chain
+                if (event_url, tracking_key) not in cj_seen_elements[cj.id]:
+                    cj_took_extra_steps[cj.id] = True
 
-            # print(f"[INFO] Added {'MATCHED' if is_match else 'UNMATCHED'} event {raw_event.id} to journey {cj.id}")
+            print(f"[INFO] Added {'MATCHED' if is_match else 'UNMATCHED'} event {raw_event.id} to journey {cj.id}")
 
-            continue  # check if this event matches any other journeys
+            # Important: Break after processing this event against this journey
+            # Each event should only be processed against one active journey per user
+            break
 
-        # At the end of 3.3, if not yet marked:
-        if not raw_event.processed_ideal_path:
-            raw_event.processed_ideal_path = True
-            raw_event.account_id = 1
-            any_changes_made = True
-            # print(f"[INFO] Marked raw event {raw_event.id} as processed")
+                # Mark all events as processed at the end of each iteration
+        raw_event.processed_ideal_path = True
+        raw_event.account_id = 1
+        any_changes_made = True
 
-        # STEP 4 — MARK EVENT AS PROCESSED
-
-        # After trying to match the event to a journey (either start or in-progress),
-        # we mark it as processed so we don’t re-analyze it next time
-        # if the event was handled in 3.1 we skip marking it as processed
-        if event_handled:
-            raw_event.processed_ideal_path = True
-            any_changes_made = True
-            # print(f"[INFO] Marked raw event {raw_event.id} as processed")
-            continue  # skip to next raw event
-
-        # print(f"[INFO] Marked raw event {raw_event.id} as processed")
 
     # STEP 5 — SAVE EVERYTHING TO DATABASE
 

@@ -69,9 +69,21 @@ def trigger_journey_evaluation():
 @app.route('/api/process_journey_metrics', methods=['POST'])
 def run_report():
     try:
+        # Get account_id from JSON body if provided
+        data = request.get_json() if request.is_json else {}
+        account_id = data.get('account_id') if data else None
+        
         # Run the event processing function
-        process_journey_metrics(db.session)
-        return jsonify({"status": "success", "message": "Journeys processed successfully"}), 200
+        if account_id:
+            result = process_journey_metrics(db.session, account_id=account_id)
+        else:
+            result = process_journey_metrics(db.session)
+            
+        return jsonify({
+            "status": "success", 
+            "message": "Journeys processed successfully",
+            "completion_rates": result
+        }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

@@ -46,6 +46,10 @@ def receive_posthog_event():
 
     # Generate XPath from elements_chain
     generated_xpath = elements_chain_to_xpath(elements_chain) if elements_chain else ""
+    
+    # Normalize current_url to handle dynamic IDs and ports
+    from utils.url_utils import normalize_url_for_matching
+    normalized_current_url = normalize_url_for_matching(data.get("current_url")) if data.get("current_url") else ""
 
     print(f"[DEBUG] Processing event: {data.get('event')} | event_type: {event_type} | elements_chain length: {len(elements_chain) if elements_chain else 0}")
 
@@ -57,7 +61,7 @@ def receive_posthog_event():
         event=data.get("event"),
         event_type=event_type,
         pathname=normalized_pathname,
-        current_url=data.get("current_url"),
+        current_url=normalized_current_url,  # Use normalized URL
         elements_chain=elements_chain,
         x_path=generated_xpath,
         timestamp=data.get("timestamp")

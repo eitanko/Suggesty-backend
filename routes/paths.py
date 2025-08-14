@@ -251,8 +251,7 @@ def get_journey_data(journey_id):
         ideal_journey_data.append({
             "url": trimmed_url,
             "elements_chain": elements_chain,
-            # "element_data": element_data,
-            # "xpath": xpath,
+            "xpath": step.x_path,  # Include xpath from Step model
             "ideal_time": ideal_time
         })
 
@@ -284,10 +283,10 @@ def get_journey_data(journey_id):
             if trimmed_url not in events_dict:
                 events_dict[trimmed_url] = []
 
-            # Append the parsed xpath and timestamp
+            # Append the xpath and timestamp from Event model
             events_dict[trimmed_url].append({
                 "elements_chain": event.elements_chain,
-                # "xpath": xpath,
+                "xpath": event.x_path,  # Include xpath from Event model
                 "timestamp": event.timestamp.timestamp(),
                 "page_title": get_page_title(event.page_title, trimmed_url)
             })
@@ -367,13 +366,14 @@ def build_funnel_tree(journey_id, journey_data=None):
         for page, event_list in events.items():
             for event in event_list:
                 elements_chain = event["elements_chain"]
+                xpath = event.get("xpath")  # Get xpath from event
                 timestamp = event["timestamp"]
                 page_url = page
                 page_title = get_page_title(event["page_title"], page_url)
-                path.append((elements_chain, timestamp, page_url, page_title))
+                path.append((elements_chain, xpath, timestamp, page_url, page_title))
 
         # Sort the path by timestamp
-        path.sort(key=lambda x: x[1])
+        path.sort(key=lambda x: x[2])  # Update index since we added xpath
         user_paths.append((session_id, path))
 
     counter = 1
@@ -382,11 +382,19 @@ def build_funnel_tree(journey_id, journey_data=None):
         node = tree
         prev_timestamp = None
 
-        for elements_chain, timestamp, page_url, page_title in path:
+        for elements_chain, xpath, timestamp, page_url, page_title in path:
             is_ideal = False
 
+            # Check if this event matches an ideal journey step using xpath or elements_chain
             for ideal_event in ideal_journey:
-                if ideal_event['url'] == page_url and ideal_event['elements_chain'] == elements_chain:
+                url_match = ideal_event['url'] == page_url
+                # Prefer xpath matching, fallback to elements_chain
+                if xpath and ideal_event.get('xpath'):
+                    element_match = ideal_event['xpath'] == xpath
+                else:
+                    element_match = ideal_event['elements_chain'] == elements_chain
+                
+                if url_match and element_match:
                     is_ideal = True
                     break
 
@@ -394,6 +402,7 @@ def build_funnel_tree(journey_id, journey_data=None):
                 child_node = {
                     "name": str(counter),
                     "elements_chain": translate_elements_chain(elements_chain),
+                    "xpath": xpath,  # Include xpath in the node
                     "url": page_url,
                     "pageTitle": get_page_title(page_title, page_url),
                     "count": 0,
@@ -530,20 +539,21 @@ def find_top_drop_off_events(user_journeys, top_n=5):
                     last_event = events[-1]  # Get last recorded event
                     last_url = page  # Capture the URL of the page
 
-            # Extract elements_chain if last_event is a dictionary
+            # Extract elements_chain and xpath if last_event is a dictionary
             if isinstance(last_event, dict):
-                last_elements_chain = last_event.get("elements_chain")  # Extract last_elements_chain
+                last_elements_chain = last_event.get("elements_chain")
+                last_xpath = last_event.get("xpath")
 
-                # Ensure both URL and XPath are present
+                # Ensure both URL and elements_chain are present
                 if isinstance(last_url, str) and isinstance(last_elements_chain, str):
-                    drop_off_events.append((last_url, last_elements_chain))
+                    drop_off_events.append((last_url, last_elements_chain, last_xpath))
 
     # Count occurrences of drop-off events
     event_counts = Counter(drop_off_events)
 
     # Get the top N most common drop-off events with counts
-    top_drop_offs = [{"url": url, "elements_chain": elements_chain, "count": count}
-                     for (url, elements_chain), count in event_counts.most_common(top_n)]
+    top_drop_offs = [{"url": url, "elements_chain": elements_chain, "xpath": xpath, "count": count}
+                     for (url, elements_chain, xpath), count in event_counts.most_common(top_n)]
 
     return top_drop_offs
 
@@ -557,33 +567,53 @@ def find_repeated_clicks(user_journeys, min_repeats=3):
         min_repeats (int): Minimum number of consecutive clicks to consider as an issue.
 
     Returns:
-        list: List of tuples (page_url, elements_chain, repeat_count) for repeated clicks.
+        list: List of dictionaries with page_url, elements_chain, xpath, and repeat_count for repeated clicks.
     """
     repeated_clicks = []
 
     for journey in user_journeys:
         for page_url, events in journey.get("events", {}).items():
             previous_elements_chain = None
+            previous_xpath = None
             repeat_count = 0
 
             for event in events:
-                # Extract elements_chain if event is a dictionary, otherwise use the string directly
-                elements_chain = event["elements_chain"] if isinstance(event, dict) else event
+                # Extract elements_chain and xpath if event is a dictionary
+                if isinstance(event, dict):
+                    elements_chain = event.get("elements_chain")
+                    xpath = event.get("xpath")
+                else:
+                    elements_chain = event
+                    xpath = None
 
-                if elements_chain == previous_elements_chain:
+                # Use xpath for comparison if available, otherwise elements_chain
+                current_identifier = xpath if xpath else elements_chain
+                previous_identifier = previous_xpath if previous_xpath else previous_elements_chain
+
+                if current_identifier == previous_identifier:
                     repeat_count += 1
                 else:
                     # If a sequence of repeated clicks was found, store it
                     if repeat_count >= min_repeats:
-                        repeated_clicks.append(
-                            (page_url, previous_elements_chain, repeat_count + 1))  # Include the first click
+                        repeated_clicks.append({
+                            "page_url": page_url,
+                            "elements_chain": previous_elements_chain,
+                            "xpath": previous_xpath,
+                            "repeat_count": repeat_count + 1  # Include the first click
+                        })
                     repeat_count = 0  # Reset count
 
                 previous_elements_chain = elements_chain
+                previous_xpath = xpath
 
             # Handle case where the last event in sequence was a repeat
             if repeat_count >= min_repeats:
-                repeated_clicks.append((page_url, previous_elements_chain, repeat_count + 1))  # Include first click
+                repeated_clicks.append({
+                    "page_url": page_url,
+                    "elements_chain": previous_elements_chain,
+                    "xpath": previous_xpath,
+                    "repeat_count": repeat_count + 1  # Include first click
+                })
 
     return repeated_clicks
 

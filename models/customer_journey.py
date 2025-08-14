@@ -349,6 +349,8 @@ class FormUsage(db.Model):
     submit_text = db.Column("submitText",String, nullable=True)
     elements_chain = db.Column("elementsChain", db.Text, nullable=True)
     x_path = db.Column("xPath", db.String(500), nullable=True) 
+    from sqlalchemy.ext.mutable import MutableDict
+    fields_engaged = db.Column("fieldsEngaged", MutableDict.as_mutable(JSON), nullable=True)  # JSON to store field engagement data
 
     created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)

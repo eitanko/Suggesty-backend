@@ -1,7 +1,7 @@
 from flask import jsonify, Blueprint, request
 import datetime
 from models.customer_journey import RawEvent, JourneyFriction, FrictionType
-from services.friction.detectors.backtracking import detect_backtracking
+from services.friction.detectors.navigation import detect_navigation_issues
 from db import db
 
 friction_blueprint = Blueprint('friction', __name__)
@@ -18,9 +18,11 @@ def load_raw_events(account_id: int, start_time=None, end_time=None):
     return query.order_by(RawEvent.distinct_id, RawEvent.session_id, RawEvent.timestamp).all()
 
 def save_friction_points(friction_points):
-    """Save detected friction points to the database"""
+    """Save detected friction points to the database and update processed_friction flag"""
     if not friction_points:
         return
+
+    processed_event_ids = []
 
     for point in friction_points:
         # Check if similar friction point already exists
@@ -53,7 +55,16 @@ def save_friction_points(friction_points):
 
             db.session.add(new_friction)
 
+        # Collect event IDs to mark as processed
+        processed_event_ids.append(point['id'])
+
+    # Commit friction points to the database
     db.session.commit()
+
+    # Update processed_friction flag for raw events
+    if processed_event_ids:
+        RawEvent.query.filter(RawEvent.id.in_(processed_event_ids)).update({"processed_friction": True}, synchronize_session=False)
+        db.session.commit()
 
 @friction_blueprint.route("/", methods=["POST"])
 def process_friction():
@@ -87,7 +98,7 @@ def process_friction():
 
         # Run detectors
         friction_points = []
-        friction_points += detect_backtracking(raw_events)
+        friction_points += detect_navigation_issues(raw_events)
 
         # Save results
         save_friction_points(friction_points)

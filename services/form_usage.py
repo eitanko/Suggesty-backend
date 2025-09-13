@@ -8,6 +8,60 @@ from models.customer_journey import FormUsage, RawEvent
 
 form_usage_blueprint = Blueprint("form_usage", __name__)
 
+SUBMIT_REGEX = re.compile(r'(\bsubmit\b|\bsave\b|\bcontinue\b|\bnext\b)', re.IGNORECASE)
+
+def is_submit_click(elements_chain: str) -> bool:
+    """
+    Heuristics to detect submit button clicks from elements_chain.
+    Works for <button type="submit">, <input type="submit">, and role/button with submit-like text.
+    """
+    if not elements_chain:
+        return False
+
+    # break into segments; last segment is the clicked element
+    seg = elements_chain.split(";")[-1].strip()
+
+    # 1) explicit type=submit on button/input
+    if re.search(r'attr__type="submit"', seg, flags=re.IGNORECASE):
+        return True
+
+    # 2) element tag looks like button (button, input[type=button], role=button)
+    looks_like_button = seg.startswith("button") or 'role="button"' in seg or "role=button" in seg
+    # 3) text content hints (PostHog often records attr__text or innerText)
+    has_submitish_text = bool(re.search(r'attr__text="([^"]+)"', seg) or re.search(r'innerText="([^"]+)"', seg) or SUBMIT_REGEX.search(seg))
+
+    # For <input> type=button, we may also have attr__value
+    has_value_submitish = bool(re.search(r'attr__value="([^"]+)"', seg) and SUBMIT_REGEX.search(seg))
+
+    return looks_like_button and (has_submitish_text or has_value_submitish)
+
+
+def extract_button_text(elements_chain: str) -> str | None:
+    """
+    Extract human-readable label for the clicked button from elements_chain.
+    """
+    if not elements_chain:
+        return None
+    seg = elements_chain.split(";")[-1].strip()
+
+    # try typical attributes PostHog captures
+    for pattern in [r'attr__text="([^"]+)"', r'innerText="([^"]+)"', r'attr__value="([^"]+)"', r'attr__aria-label="([^"]+)"']:
+        m = re.search(pattern, seg)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+
+    # fallback: class or tag hint if it includes meaningful text
+    mclass = re.search(r'attr__class="([^"]+)"', seg)
+    if mclass:
+        cls = mclass.group(1).strip()
+        if SUBMIT_REGEX.search(cls):
+            return cls
+
+    # final fallback if nothing else
+    if SUBMIT_REGEX.search(seg):
+        return "Submit"
+    return None
+
 def extract_field_identifier(elements_chain: str) -> str:
     """
     Extract a meaningful field identifier from elements_chain.
@@ -60,9 +114,9 @@ def update_fields_engaged(form_usage, field_identifier: str, event_timestamp):
     # Initialize fields_engaged if it doesn't exist (Initialize JSON Structure step)
     if not form_usage.fields_engaged:
         form_usage.fields_engaged = {
-            "fields_list": [],
-            "engagement_sequence": [],
-            "total_unique_fields": 0
+            "fields": [],
+            "sequence": [],
+            "unique": 0
         }
     
     engaged_data = form_usage.fields_engaged
@@ -75,13 +129,13 @@ def update_fields_engaged(form_usage, field_identifier: str, event_timestamp):
         return
 
     # Add to fields list if not already present
-    if field_id not in engaged_data["fields_list"]:
-        engaged_data["fields_list"].append(field_id)
-        engaged_data["total_unique_fields"] = len(engaged_data["fields_list"])
+    if field_id not in engaged_data["fields"]:
+        engaged_data["fields"].append(field_id)
+        engaged_data["unique"] = len(engaged_data["fields"])
 
-    # Find existing entry in engagement_sequence or create new one
+    # Find existing entry in sequence or create new one
     existing_entry = None
-    for entry in engaged_data["engagement_sequence"]:
+    for entry in engaged_data["sequence"]:
         if entry["field"] == field_id:
             existing_entry = entry
             break
@@ -92,7 +146,7 @@ def update_fields_engaged(form_usage, field_identifier: str, event_timestamp):
         existing_entry["timestamp"] = event_timestamp.isoformat()
     else:
         # Create new entry
-        engaged_data["engagement_sequence"].append({
+        engaged_data["sequence"].append({
             "field": field_id,
             "timestamp": event_timestamp.isoformat(),
             "changes": 1
@@ -280,7 +334,7 @@ def detect_and_save_form_usage(account_id: int):
     unprocessed_events = (
         db.session.query(RawEvent)
         .filter_by(processed_form_usage=False, account_id=account_id)
-        .filter(RawEvent.event_type.in_(["change", "submit"]))
+        .filter(RawEvent.event_type.in_(["change", "click", "submit"]))
         .order_by(RawEvent.timestamp)  # ⏰ Process in chronological order
         .all()
     )
@@ -335,9 +389,9 @@ def detect_and_save_form_usage(account_id: int):
                 submit_text=None,
                 elements_chain=event.elements_chain,
                 fields_engaged={
-                    "fields_list": [],
-                    "engagement_sequence": [],
-                    "total_unique_fields": 0
+                    "fields": [],
+                    "sequence": [],
+                    "unique": 0
                 }
             )
             db.session.add(form_usage)
@@ -364,6 +418,25 @@ def detect_and_save_form_usage(account_id: int):
             form_usage.input_count = (form_usage.input_count or 0) + 1
             print(f"[DEBUG] � Updated input count to {form_usage.input_count}")
             
+        elif event.event_type == "click":
+            # Detect a submit-intent click and capture button text/selector
+            if is_submit_click(event.elements_chain):
+                # Ensure we have a start time for consistent windows later
+                if not form_usage.started_at:
+                    form_usage.started_at = event.timestamp
+
+                # Save human label for the submit control if available
+                btn_text = extract_button_text(event.elements_chain)
+                if btn_text:
+                    form_usage.submit_text = btn_text
+
+                # Optionally, record the clicked control as "last_field"
+                # (useful for later heuristics / debugging)
+                form_usage.last_field = event.elements_chain
+
+                # NOTE: we DO NOT mark as submitted here. Success is only when we see a 'submit' event.
+                # This keeps failure vs success determination clean for analytics.
+
         elif event.event_type == "submit":
             # ✅ Mark form as completed
             form_usage.submitted_at = event.timestamp

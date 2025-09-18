@@ -1,7 +1,7 @@
 from email.policy import default
 
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, JSON, func
 from sqlalchemy.orm import relationship
 import uuid
 from enum import Enum
@@ -356,3 +356,18 @@ class FormUsage(db.Model):
     updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)
 
 
+class Insights(db.Model):
+    __tablename__ = 'Insights'
+    
+    id = db.Column(Integer, primary_key=True, autoincrement=True)
+    account_id = db.Column("accountId", Integer, nullable=False, index=True)
+
+    # JSON summary input (aggregated data from PageUsage, EventsUsage, etc.)
+    summary = db.Column(db.JSON, nullable=False)
+
+    # AI-generated HTML insights
+    insights = db.Column(String, nullable=True)
+    scope = db.Column(String, nullable=True)  # e.g., "Overall", "Form Usage", "Navigation"
+
+    created_at = db.Column("createdAt", db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column("updatedAt", db.DateTime, default=datetime.utcnow)

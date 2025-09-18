@@ -84,3 +84,13 @@ def urls_match_pattern(event_url, pattern_url):
     
     # Compare the normalized event URL with the pattern
     return normalized_event_url == pattern_url
+
+def make_pretty_url(url: str) -> str:
+    if not url:
+        return ""
+    cleaned = url.split('#')[0]
+    if cleaned == "/":
+        return "home"
+    if cleaned.startswith("/"):
+        cleaned = cleaned[1:]
+    return cleaned.rstrip("/")

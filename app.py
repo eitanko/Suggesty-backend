@@ -40,6 +40,7 @@ app.register_blueprint(page_usage_blueprint, url_prefix='/api/page_usage')
 app.register_blueprint(event_usage_blueprint, url_prefix='/api/event_usage')
 app.register_blueprint(friction_blueprint, url_prefix='/api/friction')
 app.register_blueprint(form_usage_blueprint, url_prefix='/api/form_usage')
+app.register_blueprint(insights_blueprint, url_prefix='/api/insights')
 
 @app.route('/api/process-events', methods=['POST'])
 def process_events():

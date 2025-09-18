@@ -414,7 +414,7 @@ def detect_and_save_form_usage(account_id: int):
             print(f"[DEBUG] 📝 Updated field engagement for: {field_identifier}")
 
             # � Update last field and increment count
-            form_usage.last_field = event.elements_chain
+            form_usage.last_field = field_identifier or "unknown_field"
             form_usage.input_count = (form_usage.input_count or 0) + 1
             print(f"[DEBUG] � Updated input count to {form_usage.input_count}")
             
@@ -432,7 +432,7 @@ def detect_and_save_form_usage(account_id: int):
 
                 # Optionally, record the clicked control as "last_field"
                 # (useful for later heuristics / debugging)
-                form_usage.last_field = event.elements_chain
+                form_usage.last_field = getattr(event, 'x_path', None) or form_usage.last_field
 
                 # NOTE: we DO NOT mark as submitted here. Success is only when we see a 'submit' event.
                 # This keeps failure vs success determination clean for analytics.

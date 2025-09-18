@@ -5,4 +5,8 @@ git_batch.sh
 utils/tree_from_db.py
 utils/transform_user_journeys.py
 utils/journey_tree_builder.py
-tests/generate_insights.py
+/tests/test_generate_insights.py
+!**/__pycache__/
+__pycache__/
+*.pyc
+*.pyo

@@ -1,6 +1,5 @@
 .env
 journey_report.py
-# Add this line to your .gitignore file
 git_batch.sh
 utils/tree_from_db.py
 utils/transform_user_journeys.py

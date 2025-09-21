@@ -7,7 +7,12 @@ import json
 
 
 # Function to process raw events and update customer journeys
-def process_raw_events(session: Session):
+def process_raw_events(session: Session, account_id: int = None):
+    """
+    Process raw events.
+    If account_id is given, only process events for that account.
+    Otherwise, process all unprocessed events.
+    """
 
     any_changes_made = False
 
@@ -15,7 +20,12 @@ def process_raw_events(session: Session):
 
     # First, we want to collect all raw events that haven’t been processed yet.
     # These are events that were recorded but haven’t been analyzed or assigned to any journey.
-    unprocessed_raw_events = session.query(RawEvent).filter_by(processed_ideal_path=False).order_by(RawEvent.timestamp).all()
+
+    query = session.query(RawEvent).filter_by(processed_ideal_path=False)
+
+    if account_id: query = query.filter(RawEvent.account_id == account_id)
+    
+    unprocessed_raw_events = query.order_by(RawEvent.timestamp).all()
 
     # We use pandas here to make it easier to loop over and work with the data.
     # This creates a DataFrame (like an Excel table) where each row is an event.
@@ -30,7 +40,7 @@ def process_raw_events(session: Session):
         'raw_event_obj': event  # actual object we'll update later
     } for event in unprocessed_raw_events])
 
-    print(f"[DEBUG] Found {len(unprocessed_raw_events)} unprocessed raw events")
+    print(f"[DEBUG] Found {len(unprocessed_raw_events)} unprocessed raw events for account {account_id or 'ALL'}")
 
     # STEP 2 — LOAD IDEAL JOURNEYS
 

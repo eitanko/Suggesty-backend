@@ -7,11 +7,12 @@ from .person import person_blueprint
 from .utils import utils_blueprint
 from routes.depricated.ph_events import posthog_events_blueprint
 from .events import events_blueprint
-from services.event_processor_failed import events_failed_blueprint
+# from services.event_processor_failed import events_failed_blueprint
 from services.page_usage import page_usage_blueprint
 from services.event_usage import event_usage_blueprint
 from services.friction.process_friction import friction_blueprint
 from services.insights import insights_blueprint
+from .events_failed_routes import events_failed_blueprint
 
 # Expose the blueprints so they can be imported from routes
 __all__ = [

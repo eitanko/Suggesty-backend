@@ -44,28 +44,26 @@ app.register_blueprint(insights_blueprint, url_prefix='/api/insights')
 
 @app.route('/api/process-events', methods=['POST'])
 def process_events():
-    import logging
-    import traceback
+    import logging, traceback
     from services.event_processor import process_raw_events
-    app.logger.setLevel(logging.INFO)
     try:
         # Run the event processing function
-        process_raw_events(db.session)
-        return jsonify({"status": "success", "message": "Events processed successfully"}), 200
+
+        data = request.get_json(silent=True) or {}
+        account_id = data.get("account_id")
+
+        processed_count = process_raw_events(db.session, account_id=account_id)
+
+        return jsonify({
+            "status": "success",
+            "message": f"Processed {processed_count} events",
+            "account_id": account_id or "ALL"
+        }), 200
+        
     except Exception as e:
         app.logger.error("Error processing events:\n" + traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/api/process_events_failed', methods=['POST'])
-def trigger_journey_evaluation():
-    timeout = request.args.get('timeout', default=30, type=int)
-    from services.event_processor_failed import evaluate_journey_failures
-    updated_count = evaluate_journey_failures(db.session, timeout_minutes=timeout)
-
-    return jsonify({
-        "message": "Evaluation complete",
-        "journeys_failed": updated_count
-    })
 
 @app.route('/api/process_journey_metrics', methods=['POST'])
 def run_report():
@@ -88,25 +86,6 @@ def run_report():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# @app.route("/api/classify_button", methods=["POST"])
-# this code is used to classify a button click event based on the elements chain sending the data to an ai classifier.
-# based on this we can tell if a form has been submitted, a button was used for navigation.
-# def classify_button_api():
-#     data = request.json
-#
-#     try:
-#         label = classify_button(data)
-#
-#         return jsonify({
-#             "label": label,
-#             "success": True
-#         })
-#     except Exception as e:
-#         return jsonify({
-#             "error": str(e),
-#             "success": False
-#         }), 500
 
 if __name__ == '__main__':
-    # Run the report here if you want to trigger the function directly
     app.run(host='0.0.0.0', port=5000)

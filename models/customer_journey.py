@@ -42,7 +42,7 @@ class Account(db.Model):
 
 class Step(db.Model):
     __tablename__ = "Step"
-
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     journey_id = db.Column("journeyId", db.Integer, db.ForeignKey("Journey.id"), nullable=False)
     url = db.Column(db.String(255), nullable=False)
@@ -58,7 +58,8 @@ class Step(db.Model):
 
     journey = db.relationship("Journey", back_populates="steps")
 
-    def __init__(self, journey_id, url, page_title, event_type, name, element, elements_chain, x_path, screen_path, index):
+    def __init__(self, account_id, journey_id, url, page_title, event_type, name, element, elements_chain, x_path, screen_path, index):
+        self.account_id = account_id
         self.journey_id = journey_id
         self.url = url
         self.page_title = page_title
@@ -116,6 +117,8 @@ class CompletionType(Enum):
 class CustomerJourney(db.Model):
     __tablename__ = "CustomerJourney"
 
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
+
     # Primary key
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
 
@@ -129,6 +132,7 @@ class CustomerJourney(db.Model):
     completion_type = db.Column("completionType", db.Enum(CompletionType), nullable=True)  # New column to track completion type
     start_time = db.Column("startTime", db.DateTime, default=db.func.current_timestamp())
     end_time = db.Column("endTime", db.DateTime, nullable=True)
+    session_start_time = db.Column("sessionStartTime", db.DateTime, default=db.func.current_timestamp())
     created_at = db.Column("createdAt", db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column("updatedAt", db.DateTime, default=db.func.current_timestamp())
     total_steps = db.Column("totalSteps", db.Integer, nullable=True)
@@ -142,12 +146,14 @@ class CustomerJourney(db.Model):
     events = db.relationship("Event", back_populates="customer_journey")
     progress = db.relationship("JourneyProgress", back_populates="customer_journey", cascade="all, delete-orphan")
 
-    def __init__(self, journey_id, session_id, start_time, end_time, current_step_index, total_steps=0, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, completion_type=None):
+    def __init__(self, account_id, journey_id, session_id, start_time, end_time, current_step_index, session_start_time, total_steps=0, updated_at=None, person_id=None, status=JourneyStatusEnum.IN_PROGRESS, completion_type=None):
+        self.account_id = account_id
         self.journey_id = journey_id
         self.session_id = session_id
         self.person_id = person_id  # Can be None if not available
         self.start_time = start_time
         self.end_time = end_time
+        self.session_start_time = session_start_time
         self.status = status
         self.total_steps = total_steps
         self.updated_at = updated_at
@@ -156,7 +162,7 @@ class CustomerJourney(db.Model):
 
 class JourneyProgress(db.Model):
     __tablename__ = 'JourneyProgress'
-
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
     id = db.Column(db.Integer, primary_key=True)
     customer_journey_id = db.Column("customerJourneyId", db.Integer, db.ForeignKey('CustomerJourney.id'), nullable=False)
     step_number = db.Column("stepNumber", db.Integer, nullable=False)
@@ -183,7 +189,7 @@ class CustomerSession(db.Model):
 
 class Event(db.Model):
     __tablename__ = "Event"
-
+    account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
     id = db.Column(db.Integer, primary_key=True)
     person_id = db.Column("personId", db.String(36), nullable=False)  # Now just a string, not a ForeignKey
     session_id = db.Column("sessionId", db.String(255), nullable=False)
@@ -199,7 +205,8 @@ class Event(db.Model):
 
     customer_journey = db.relationship("CustomerJourney", back_populates="events")
 
-    def __init__(self, session_id, event_type, url, page_title, element, elements_chain, x_path, customer_journey_id=None, timestamp=None, person_id=None, is_match=False):
+    def __init__(self, account_id,session_id, event_type, url, page_title, element, elements_chain, x_path, customer_journey_id=None, timestamp=None, person_id=None, is_match=False):
+        self.account_id = account_id
         self.session_id = session_id
         self.event_type = event_type
         self.url = url
@@ -291,7 +298,7 @@ class JourneyFriction(db.Model):
 
     account_id = db.Column("accountId", db.Integer, db.ForeignKey('Account.id'), nullable=False)
 
-    def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume, user_dismissed):
+    def __init__(self, journey_id, event_name, url, event_details, session_id, friction_type, volume, user_dismissed, account_id, friction_rate=0.0):
         self.journey_id = journey_id
         self.event_name = event_name
         self.url = url
@@ -300,6 +307,8 @@ class JourneyFriction(db.Model):
         self.friction_type = friction_type
         self.volume = volume
         self.user_dismissed = user_dismissed
+        self.account_id = account_id
+        self.friction_rate = 0.0  # Default value, can be updated later
 
 class PageUsage(db.Model):
     __tablename__ = 'PageUsage'

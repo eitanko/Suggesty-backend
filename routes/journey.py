@@ -7,6 +7,7 @@ from sqlalchemy.sql.base import elements
 
 from config import Config  # Import the centralized configuration
 from models import Journey, Step, JourneyLiveStatus
+from models.customer_journey import Account
 from utils.element_chain_utils import elements_chain_to_xpath
 from db import db
 import json
@@ -190,6 +191,7 @@ def save_step(journey_id):
 
     **Request Body Example:**
     {
+        "apiKey": "feaafasdf23ea", 
         "journeyId": 1,
         "url": "https://example.com",
         "eventType": "click",
@@ -215,6 +217,14 @@ def save_step(journey_id):
     try:
         # Log the incoming request data
         data = request.json
+        api_key = data.get("apiKey")
+
+        if not api_key:
+            return jsonify({"success": False, "error": "Missing API key"}), 401
+
+        account = Account.query.filter_by(api_key=api_key).first()
+        if not account:
+            return jsonify({"success": False, "error": "Invalid API key"}), 403
 
         # Extract and decode the screenshot
         screenshot_data = data.get('screenshot')
@@ -240,6 +250,7 @@ def save_step(journey_id):
         
         # Save step details to the database
         step_details = Step(
+            account_id=account.id,
             journey_id=journey_id,
             url=data["url"],
             page_title=data["pageTitle"],

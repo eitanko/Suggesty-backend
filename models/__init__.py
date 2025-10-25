@@ -1,4 +1,4 @@
-from .customer_journey import CustomerJourney, JourneyStatusEnum, Person, Event, CustomerSession, Journey, Step, JourneyLiveStatus, JourneyProgress, RawEvent, JourneyAnalytics, Account, PageUsage
+from .customer_journey import CustomerJourney, JourneyStatusEnum, Person, Event, CustomerSession, Journey, Step, JourneyLiveStatus, JourneyProgress, RawEvent, JourneyAnalytics, Account, PageUsage, CompletionType, FrictionType
 
 from .customer_journey import (
     CustomerJourney,
@@ -16,5 +16,7 @@ from .customer_journey import (
     PageUsage,
     EventsUsage,
     FormUsage,
-    JourneyFriction
+    JourneyFriction,
+    CompletionType,
+    FrictionType
 )

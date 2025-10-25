@@ -3,11 +3,12 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.base import elements
 
-from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event
+from models import CustomerJourney, JourneyAnalytics, JourneyStatusEnum, Event, Journey, CustomerJourney, JourneyStatusEnum
 from models.customer_journey import FrictionType, JourneyFriction, CompletionType
 from utils import compare_elements  # a custom function to check if two element chains are equivalent
 from utils.url_utils import normalize_url_for_matching  # Import URL normalization utility
 from collections import defaultdict
+
 
 def calculate_completion_times(journey_groups):
     """
@@ -258,152 +259,6 @@ from typing import Tuple, Dict, List
 from statistics import mean
 # from utils.norm_and_compare import compare_elements
 
-
-def generate_step_insights_from_ideal_path(
-    ideal_path_steps,
-    completed_journeys,
-    threshold,
-    repeated_events=None,
-    drop_off_events=None
-) -> Tuple[Dict, List[Tuple[str, str, str, float]]]:
-    """
-    Builds a step_insights JSON for a journey based on:
-    - the ideal admin path
-    - completed user journeys
-    Detects delays as anomalies if actual time > threshold * ideal time.
-    """
-    repeated_events = repeated_events or {}
-    drop_off_events = drop_off_events or {}
-
-    # Step 1: Compute expected durations (in ms) between ideal steps
-    ideal_durations = {}
-    for i in range(1, len(ideal_path_steps)):
-        prev = ideal_path_steps[i - 1]
-        curr = ideal_path_steps[i]
-        key = (curr["url"], curr["element"])
-        ideal_durations[key] = (
-            (curr["timestamp"] - prev["timestamp"]).total_seconds() * 1000
-        )
-
-    # Step 2: Track actual times and delay sessions
-    step_stats = defaultdict(lambda: {
-        "times": [],
-        "delayed_sessions": set(),
-        "all_sessions": set()
-    })
-    delayed_events = []
-
-    for journey in completed_journeys:
-        session_id = journey[0].get("session_id")
-        for i in range(1, len(journey)):
-            prev_event = journey[i - 1]
-            curr_event = journey[i]
-            duration = curr_event["timestamp"] - prev_event["timestamp"]
-
-            for ideal_index in range(1, len(ideal_path_steps)):
-                ideal_prev = ideal_path_steps[ideal_index - 1]
-                ideal_curr = ideal_path_steps[ideal_index]
-                ideal_key = (ideal_curr["url"], ideal_curr["element"])
-
-                # Compare both previous and current to ideal prev and curr
-                if (
-                        prev_event["url"] == ideal_prev["url"]
-                        and compare_elements(ideal_prev["element"], prev_event["element"])
-                        and curr_event["url"] == ideal_curr["url"]
-                        and compare_elements(ideal_curr["element"], curr_event["element"])
-                        and curr_event.get("is_match", False)
-                ):
-                    step_stats[ideal_key]["times"].append(duration)
-                    step_stats[ideal_key]["all_sessions"].add(session_id)
-
-                    if duration > threshold * ideal_durations.get(ideal_key, float("inf")):
-                        step_stats[ideal_key]["delayed_sessions"].add(session_id)
-                        delayed_events.append((
-                            curr_event["element"],
-                            curr_event["url"],
-                            session_id,
-                            duration
-                        ))
-                    break  # stop after first matching transition
-
-    # Step 3: Assemble step_insights
-    # Use OrderedDict to ensure proper ordering when serialized to JSON
-    from collections import OrderedDict
-    step_insights = OrderedDict()
-
-    # Sort ideal_path_steps by step index to ensure correct order
-    sorted_steps = sorted(ideal_path_steps, key=lambda x: x.get("step", 0))
-    
-    # Debug: Print the sorted order
-    print(f"Debug - Sorted steps order:")
-    for i, step in enumerate(sorted_steps):
-        print(f"  Position {i+1}: Step {step.get('step')}, Element: {step['xPath'][:50]}...")
-
-    for i, step in enumerate(sorted_steps):
-        key = (step["url"], step["element"])
-        stats = step_stats.get(key, {
-            "times": [],
-            "delayed_sessions": set(),
-            "all_sessions": set()
-        })
-
-        avg_time = mean(stats["times"]) if stats["times"] else 0
-        delay_rate = (
-            len(stats["delayed_sessions"]) / len(stats["all_sessions"])
-            if stats["all_sessions"] else 0
-        )
-
-        anomalies = []
-        if delay_rate:
-            anomalies.append({
-                "type": "delay",
-                "severity": "high" if delay_rate > 0.5 else "medium",
-                "detail": f"{int(delay_rate * 100)}% of users are delayed"
-            })
-
-        repeated_rate = next(
-            (rate for (el, url), rate in repeated_events.items()
-             if url == step["url"] and compare_elements(step["element"],el)),
-            0
-        )
-        if repeated_rate:
-            anomalies.append({
-                "type": "repetition",
-                "severity": "high" if repeated_rate > 0.5 else "medium",
-                "detail": f"{int(repeated_rate * 100)}% of users repeated this step"
-            })
-
-        drop_off_rate = next(
-            (rate for (el, url), rate in drop_off_events.items()
-             if url == step["url"] and compare_elements(el, step["element"])),
-            0
-        )
-        if drop_off_rate:
-            anomalies.append({
-                "type": "drop_off",
-                "severity": "high" if drop_off_rate > 0.5 else "medium",
-                "detail": f"{int(drop_off_rate * 100)}% of users dropped off here"
-            })
-
-        step_insights[f"step_{i+1}"] = {
-            "step_index": step.get("step", i+1),  # Add explicit step index for reference
-            "name": step.get("name"),
-            "url": step["url"],
-            "xPath": step.get("xPath"),  # Changed from x_path to xPath
-            "element": step["element"],
-            "avg_time_ms": round(avg_time),
-            "drop_off_rate": round(drop_off_rate, 2),
-            "repeated_rate": round(repeated_rate, 2),
-            "anomalies": anomalies,
-            "paths": {
-                "next_step": f"step_{i + 2}" if i < len(sorted_steps) - 1 else None,
-                "indirect_transitions": {},
-                "drop_off": False
-            },
-        }
-
-    return step_insights, delayed_events
-
 def calculate_drop_off_distribution(journey_group, session: Session, ideal_path_steps):
     """
     Calculate drop-off distribution for a list of CustomerJourneys.
@@ -501,7 +356,8 @@ def upsert_journey_friction(session, journey_id, event_name, url, event_details,
             session_id=session_id,
             friction_type=friction_type,
             volume=volume,
-            user_dismissed=False  # Add the missing required parameter
+            user_dismissed=False,  # Add the missing required parameter
+            account_id=account_id
         )
         new_entry.friction_rate = friction_rate
         new_entry.total_users = total_users
@@ -554,7 +410,6 @@ def extract_frequent_alternatives(indirect_completed, session) -> Dict[str, List
 
     return result
 
-def process_journey_metrics(session: Session, account_id: int = None):
     """
     Process metrics for each journey_id: store aggregate friction in JourneyFriction,
     and update JourneyAnalytics with a step_insights JSON based on the ideal path.
@@ -679,23 +534,308 @@ def process_journey_metrics(session: Session, account_id: int = None):
 
     return completion_rates
 
-def process_journey_metrics_for_posthog(session: Session, api_key: str = None):
+def generate_step_insights_from_ideal_path(
+    ideal_path_steps,
+    completed_journeys,
+    threshold,
+    repeated_events=None,
+    drop_off_events=None
+) -> Tuple[Dict, List[Tuple[str, str, str, float]]]:
     """
-    Wrapper function for PostHog calls that determines account_id from API key or context.
+    Builds a step_insights JSON for a journey based on:
+    - the ideal admin path
+    - completed user journeys
+    Detects delays as anomalies if actual time > threshold * ideal time.
     """
-    # Method 1: Get account_id from API key
-    if api_key:
-        from models import Account
-        account = session.query(Account).filter_by(api_key=api_key).first()
-        if account:
-            account_id = account.id
-        else:
-            raise ValueError(f"Invalid API key: {api_key}")
-    else:
-        # Method 2: Auto-determine from existing data
-        account_id = None
+    repeated_events = repeated_events or {}
+    drop_off_events = drop_off_events or {}
+
+    # Step 1: Compute expected durations (in ms) between ideal steps
+    ideal_durations = {}
+    for i in range(1, len(ideal_path_steps)):
+        prev = ideal_path_steps[i - 1]
+        curr = ideal_path_steps[i]
+        key = (curr["url"], curr["element"])
+        ideal_durations[key] = (
+            (curr["timestamp"] - prev["timestamp"]).total_seconds() * 1000
+        )
+
+    # Debug: Print ideal durations
+    print("Debug - Ideal durations:", ideal_durations)
+
+    # Step 2: Track actual times and delay sessions
+    step_stats = defaultdict(lambda: {
+        "times": [],
+        "delayed_sessions": set(),
+        "all_sessions": set()
+    })
+    delayed_events = []
+
+    for journey in completed_journeys:
+        session_id = journey[0].get("session_id")
+        for i in range(1, len(journey)):
+            prev_event = journey[i - 1]
+            curr_event = journey[i]
+            duration = curr_event["timestamp"] - prev_event["timestamp"]
+
+            # Debug: Log each duration calculation
+            print(f"Debug - Journey {session_id}, Step {i}: Duration = {duration}")
+
+            for ideal_index in range(1, len(ideal_path_steps)):
+                ideal_prev = ideal_path_steps[ideal_index - 1]
+                ideal_curr = ideal_path_steps[ideal_index]
+                ideal_key = (ideal_curr["url"], ideal_curr["element"])
+
+                # Compare both previous and current to ideal prev and curr
+                if (
+                        prev_event["url"] == ideal_prev["url"]
+                        and compare_elements(ideal_prev["element"], prev_event["element"])
+                        and curr_event["url"] == ideal_curr["url"]
+                        and compare_elements(ideal_curr["element"], curr_event["element"])
+                        and curr_event.get("is_match", False)
+                ):
+                    step_stats[ideal_key]["times"].append(duration)
+                    step_stats[ideal_key]["all_sessions"].add(session_id)
+
+                    # Debug: Log matching step and duration
+                    print(f"Debug - Matched Step: {ideal_key}, Duration: {duration}")
+
+                    if duration > threshold * ideal_durations.get(ideal_key, float("inf")):
+                        step_stats[ideal_key]["delayed_sessions"].add(session_id)
+                        delayed_events.append((
+                            curr_event["element"],
+                            curr_event["url"],
+                            session_id,
+                            duration
+                        ))
+                        # Debug: Log delayed session
+                        print(f"Debug - Delayed Session: {session_id}, Step: {ideal_key}, Duration: {duration}")
+                    break  # stop after first matching transition
+
+    # Step 3: Assemble step_insights
+    # Debug: Print step stats before assembling insights
+    print("Debug - Step stats:", step_stats)
+
+    # Use OrderedDict to ensure proper ordering when serialized to JSON
+    from collections import OrderedDict
+    step_insights = OrderedDict()
+
+    # Sort ideal_path_steps by step index to ensure correct order
+    sorted_steps = sorted(ideal_path_steps, key=lambda x: x.get("step", 0))
     
-    return process_journey_metrics(session, account_id)
+    # Debug: Print the sorted order
+    print(f"Debug - Sorted steps order:")
+    for i, step in enumerate(sorted_steps):
+        print(f"  Position {i+1}: Step {step.get('step')}, Element: {step['xPath'][:50]}...")
+
+    for i, step in enumerate(sorted_steps):
+        key = (step["url"], step["element"])
+        stats = step_stats.get(key, {
+            "times": [],
+            "delayed_sessions": set(),
+            "all_sessions": set()
+        })
+
+        avg_time = mean(stats["times"]) if stats["times"] else 0
+        delay_rate = (
+            len(stats["delayed_sessions"]) / len(stats["all_sessions"])
+            if stats["all_sessions"] else 0
+        )
+
+        anomalies = []
+        if delay_rate:
+            anomalies.append({
+                "type": "delay",
+                "severity": "high" if delay_rate > 0.5 else "medium",
+                "detail": f"{int(delay_rate * 100)}% of users are delayed"
+            })
+
+        repeated_rate = next(
+            (rate for (el, url), rate in repeated_events.items()
+             if url == step["url"] and compare_elements(step["element"],el)),
+            0
+        )
+        if repeated_rate:
+            anomalies.append({
+                "type": "repetition",
+                "severity": "high" if repeated_rate > 0.5 else "medium",
+                "detail": f"{int(repeated_rate * 100)}% of users repeated this step"
+            })
+
+        drop_off_rate = next(
+            (rate for (el, url), rate in drop_off_events.items()
+             if url == step["url"] and compare_elements(el, step["element"])),
+            0
+        )
+        if drop_off_rate:
+            anomalies.append({
+                "type": "drop_off",
+                "severity": "high" if drop_off_rate > 0.5 else "medium",
+                "detail": f"{int(drop_off_rate * 100)}% of users dropped off here"
+            })
+
+        step_insights[f"step_{i+1}"] = {
+            "step_index": step.get("step", i+1),  # Add explicit step index for reference
+            "name": step.get("name"),
+            "url": step["url"],
+            "xPath": step.get("xPath"),
+            "avg_time_ms": round(avg_time),
+            "drop_off_rate": round(drop_off_rate, 2),
+            "repeated_rate": round(repeated_rate, 2),
+            "anomalies": anomalies,
+            "paths": {
+                "next_step": f"step_{i + 2}" if i < len(sorted_steps) - 1 else None,
+                "indirect_transitions": {},
+                "drop_off": False
+            },
+        }
+
+    return step_insights, delayed_events
+
+def process_journey_metrics(session: Session, account_id: int = None):
+    """
+    Process metrics for journeys. Can run for a given account or all accounts.
+    """
+
+    # --- 1. Load journeys (filter by account if given)
+    query = session.query(Journey).join(CustomerJourney)
+
+    if account_id:
+        query = query.filter(Journey.account_id == account_id)
+
+    journeys = query.all()
+
+    if not journeys:
+        print(f"[DEBUG] No journeys found for account {account_id or 'ALL'}")
+        return {}
+
+    # Group customer journeys by journey_id
+    journey_groups = {}
+    for j in journeys:
+        journey_groups.setdefault(j.id, []).extend(j.customer_journeys)
+
+    # If no account_id passed, infer from the first journey
+    if account_id is None:
+        account_id = journeys[0].account_id
+
+    # --- 2. Calculate rates and stats
+    completion_rates = calculate_completion_rate(journey_groups)
+    total_completed = calculate_completed_journeys(journey_groups)
+    completion_times = calculate_completion_times(journey_groups)
+    indirect_rates = calculate_indirect_completion_rate(journey_groups)
+
+    # --- 3. Loop over each journey group
+    for journey_id, customer_journeys in journey_groups.items():
+        completed_journeys = [j for j in customer_journeys if j.status == JourneyStatusEnum.COMPLETED]
+        total_users = len(customer_journeys)
+        total_completions = total_completed.get(journey_id, 0)
+        completion_rate = completion_rates.get(journey_id, 0)
+        completion_time = completion_times.get(journey_id, 0)
+        indirect_rate = indirect_rates.get(journey_id, 0)
+
+        # 🔁 repeated
+        repeated_events_by_journey = calculate_repeated_behavior_all_journeys(customer_journeys, session)
+        aggregated_repeats = defaultdict(lambda: {"volume": 0, "total_users": total_users})
+        for step, events in repeated_events_by_journey.items():
+            for element_details, url, session_id, _ in events:
+                aggregated_repeats[(element_details, url, session_id)]["volume"] += 1
+
+        for (element_details, url, session_id), data in aggregated_repeats.items():
+            upsert_journey_friction(
+                session, str(journey_id), "repeated", url, element_details, session_id,
+                FrictionType.REPEATED,
+                (data["volume"] / total_users) * 100,
+                total_users, data["volume"], account_id
+            )
+
+        # 📉 drop-offs
+        ideal_path = get_admin_path_for_journey(session, journey_id)
+        _, _, drop_off_events = calculate_drop_off_distribution(customer_journeys, session, ideal_path)
+
+        drop_off_counts = defaultdict(int)
+        for element_details, url, session_id in drop_off_events:
+            drop_off_counts[(element_details, url, session_id)] += 1
+
+        for (element_details, url, session_id), volume in drop_off_counts.items():
+            upsert_journey_friction(
+                session, str(journey_id), "drop_off", url, element_details, session_id,
+                FrictionType.DROP_OFF,
+                (volume / total_users) * 100,
+                total_users, volume, account_id
+            )
+
+        # 🧠 insights
+        direct_completed = [j for j in completed_journeys if j.completion_type == CompletionType.DIRECT]
+        completed_sequences = [
+            seq for j in direct_completed
+            if (seq := get_event_sequence_for_customer(session, j))
+        ]
+        
+        step_insights, delayed_events = generate_step_insights_from_ideal_path(
+            ideal_path_steps=ideal_path,
+            completed_journeys=completed_sequences,
+            threshold=10,
+            repeated_events={(ed, url): data["volume"] / total_users
+                             for (ed, url, sid), data in aggregated_repeats.items()},
+            drop_off_events={(ed, url): volume / total_users
+                             for (ed, url, sid), volume in drop_off_counts.items()}
+        )
+
+        for element_details, url, session_id, delay_ms in delayed_events:
+            upsert_journey_friction(
+                session=session,
+                journey_id=str(journey_id),
+                event_name="delay",
+                url=url,
+                event_details=element_details,
+                session_id=session_id,
+                friction_type=FrictionType.DELAY,
+                friction_rate=(delay_ms / total_users) * 100,
+                total_users=total_users,
+                volume=delay_ms,
+                account_id=account_id
+            )
+
+        indirect_completed = [j for j in completed_journeys if j.completion_type == CompletionType.INDIRECT]
+        frequent_alt_paths = extract_frequent_alternatives(indirect_completed, session)
+
+        insert_journey_analytics(
+            session=session,
+            journey_id=str(journey_id),
+            account_id=account_id,
+            completion_rate=completion_rate,
+            total_completions=total_completions,
+            total_users=total_users,
+            indirect_rate=indirect_rate,
+            completion_time_ms=completion_time,
+            total_steps=0,
+            drop_off_distribution={},
+            friction_score=0,
+            frequent_alt_paths=frequent_alt_paths,
+            step_insights=step_insights
+        )
+
+    return completion_rates
+
+
+
+# def process_journey_metrics_for_posthog(session: Session, api_key: str = None):
+#     """
+#     Wrapper function for PostHog calls that determines account_id from API key or context.
+#     """
+#     # Method 1: Get account_id from API key
+#     if api_key:
+#         from models import Account
+#         account = session.query(Account).filter_by(api_key=api_key).first()
+#         if account:
+#             account_id = account.id
+#         else:
+#             raise ValueError(f"Invalid API key: {api_key}")
+#     else:
+#         # Method 2: Auto-determine from existing data
+#         account_id = None
+    
+#     return process_journey_metrics(session, account_id)
 
 
 

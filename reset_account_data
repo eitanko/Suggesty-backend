@@ -1,0 +1,78 @@
+from db import db
+from models.customer_journey import Event, CustomerJourney, JourneyAnalytics, Journey
+
+# ⚠️ WARNING: This file is a utlility for reseting journey data for testing only!!!!!!
+
+def reset_account_data(account_id: int):
+    confirmation = input(
+        f"⚠️  This will permanently delete all Event, CustomerJourney, and JourneyAnalytics "
+        f"records for account_id={account_id}.\nType 'yes' to confirm: "
+    ).strip().lower()
+
+    if confirmation != "yes":
+        print("❌ Operation cancelled.")
+        return
+
+    try:
+        print(f"🧹 Deleting data for account {account_id}...")
+
+        # 1️⃣ Find all journey IDs for this account
+        journey_ids = [j.id for j in db.session.query(Journey.id).filter(Journey.account_id == account_id).all()]
+
+        if not journey_ids:
+            print("No journeys found for this account — nothing to delete.")
+            return
+
+        # 2️⃣ Find all customer journey IDs linked to those journeys
+        customer_journey_ids = [
+            cj.id for cj in db.session.query(CustomerJourney.id)
+            .filter(CustomerJourney.journey_id.in_(journey_ids))
+            .all()
+        ]
+
+        # 3️⃣ Delete Events
+        if customer_journey_ids:
+            deleted_events = (
+                db.session.query(Event)
+                .filter(Event.customer_journey_id.in_(customer_journey_ids))
+                .delete(synchronize_session=False)
+            )
+        else:
+            deleted_events = 0
+
+        # 4️⃣ Delete CustomerJourneys
+        deleted_customer_journeys = (
+            db.session.query(CustomerJourney)
+            .filter(CustomerJourney.journey_id.in_(journey_ids))
+            .delete(synchronize_session=False)
+        )
+
+        # 5️⃣ Delete JourneyAnalytics
+        deleted_analytics = (
+            db.session.query(JourneyAnalytics)
+            .filter_by(account_id=account_id)
+            .delete(synchronize_session=False)
+        )
+
+        db.session.commit()
+
+        print(
+            f"✅ Deleted {deleted_events} events, "
+            f"{deleted_customer_journeys} customer journeys, "
+            f"and {deleted_analytics} analytics records for account {account_id}."
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        print("❗ Error resetting data:", e)
+
+
+
+if __name__ == "__main__":
+    # 🔹 import your Flask app instead of creating a new one if you already have it
+    from app import app  # replace with the correct file that defines your Flask app
+
+    account_id = int(input("Enter the account_id to reset: "))
+    # ✅ this creates the required context
+    with app.app_context():
+        reset_account_data(account_id)

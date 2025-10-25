@@ -3,7 +3,9 @@ from flask_cors import CORS
 from db import db
 from config import Config
 from routes import *
-from services.customer_journey_processor import process_journey_metrics
+# from services.customer_journey_processor_old import process_journey_metrics
+from services.process_journeys import process_journey_metrics
+
 from utils.classify_click_events import classify_button
 
 # Initialize Flask app
@@ -33,7 +35,6 @@ app.register_blueprint(paths_blueprint, url_prefix='/api/paths')
 app.register_blueprint(customer_journey_blueprint, url_prefix='/api/customer_journey')
 app.register_blueprint(person_blueprint, url_prefix='/api/person')
 app.register_blueprint(utils_blueprint, url_prefix='/api/utils')
-# app.register_blueprint(posthog_events_blueprint, url_prefix='/api/ph_events')
 app.register_blueprint(events_blueprint, url_prefix='/api/events')
 app.register_blueprint(events_failed_blueprint, url_prefix='/api/process_events_failed')
 app.register_blueprint(page_usage_blueprint, url_prefix='/api/page_usage')
@@ -41,6 +42,8 @@ app.register_blueprint(event_usage_blueprint, url_prefix='/api/event_usage')
 app.register_blueprint(friction_blueprint, url_prefix='/api/friction')
 app.register_blueprint(form_usage_blueprint, url_prefix='/api/form_usage')
 app.register_blueprint(insights_blueprint, url_prefix='/api/insights')
+app.register_blueprint(process_blueprint, url_prefix='/api/process_data') # the main endpoint to run all processes
+# app.register_blueprint(posthog_events_blueprint, url_prefix='/api/ph_events')
 
 @app.route('/api/process-events', methods=['POST'])
 def process_events():

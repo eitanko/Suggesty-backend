@@ -1,16 +1,19 @@
+# this file is used to manually run all event processors
 import logging
 import argparse
 import sys, os
+
+from services.process_journeys import process_journey_metrics
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app import app
 from db import db
 from services.event_processor import process_raw_events
 from services.event_processor_failed import evaluate_journey_failures
-from services.customer_journey_processor import process_journey_metrics
+# from services.customer_journey_processor_old import process_journey_metrics
 from services.page_usage import process_page_usage
 from services.event_usage import process_event_usage
-from services.form_usage import analyze_forms
-from services.friction.process_friction import process_friction
+from services.form_usage import detect_and_save_form_usage
+from services.process_friction import process_friction
 from services.insights import generate_insights
 from models import Account  # adjust if your Account model is in another module
 
@@ -37,16 +40,15 @@ def run_jobs(account_ids=None):
 
             # 1. Raw events
             logger.info("Processing raw events...")
-            # process_raw_events(db.session, account_id=account.id)
+            process_raw_events(db.session, account_id=account.id)
             
             # 2. Failed events
             logger.info("Evaluating journey failures...")
-            # evaluate_journey_failures(db.session, account_id=account.id, timeout_minutes=30)
+            evaluate_journey_failures(db.session, account_id=account.id, timeout_minutes=30)
         
             # 3. Journey metrics
             logger.info("Processing journey metrics...")
             process_journey_metrics(db.session, account_id=account.id)
-            continue
 
             # 4. Page usage
             logger.info("Processing page usage...")
@@ -55,10 +57,11 @@ def run_jobs(account_ids=None):
             # 5. Event usage
             logger.info("Processing event usage...")
             process_event_usage(db.session, account_id=account.id)
+            
 
             # 6. Form usage
             logger.info("Processing form usage...")
-            analyze_forms(db.session, account_id=account.id)
+            detect_and_save_form_usage(db.session, account_id=account.id)
 
             # 7. Friction
             logger.info("Processing friction metrics...")
@@ -67,6 +70,7 @@ def run_jobs(account_ids=None):
             # 8. Insights
             logger.info("Processing insights...")
             generate_insights(db.session, account_id=account.id)
+            continue
 
         logger.info("✅ All jobs completed successfully.")
 

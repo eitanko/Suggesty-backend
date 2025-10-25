@@ -1,5 +1,7 @@
 .env
 journey_report.py
+parse_element_chain.py
+reset_account_data.py
 git_batch.sh
 utils/tree_from_db.py
 utils/transform_user_journeys.py

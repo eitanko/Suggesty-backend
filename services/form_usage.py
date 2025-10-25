@@ -35,7 +35,6 @@ def is_submit_click(elements_chain: str) -> bool:
 
     return looks_like_button and (has_submitish_text or has_value_submitish)
 
-
 def extract_button_text(elements_chain: str) -> str | None:
     """
     Extract human-readable label for the clicked button from elements_chain.
@@ -226,153 +225,51 @@ def extract_form_metadata(elements_chain: str, url: str) -> dict | None:
             }
     return None
 
-@form_usage_blueprint.route("/", methods=["POST"])
-def analyze_forms():
-    """
-    API endpoint to trigger form usage analysis for a specific account.
-    
-    Expected JSON payload:
-    {
-        "account_id": 123
-    }
-    
-    This endpoint processes all unprocessed form-related events (change/submit)
-    for the given account and generates form completion/abandonment statistics.
-    """
-    account_id = request.json.get("account_id")
-
-    if not account_id:
-        return jsonify({"error": "Missing accountId"}), 400
-
-    try:
-        # print(f"[DEBUG] Starting form usage analysis for account {account_id}")
-        detect_and_save_form_usage(account_id=int(account_id))
-        # print(f"[DEBUG] Form usage analysis completed for account {account_id}")
-        return jsonify({"message": "Form usage analyzed"}), 200
-    except Exception as e:
-        # print(f"[ERROR] Form usage analysis failed for account {account_id}: {str(e)}")
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@form_usage_blueprint.route("/reset", methods=["POST"])
-def reset_form_processing():
-    """
-    Reset processed_form_usage flag to False for testing purposes.
-    
-    Expected JSON payload:
-    {
-        "account_id": 123
-    }
-    
-    This allows you to re-run form analysis on the same events.
-    """
-    account_id = request.json.get("account_id")
-
-    if not account_id:
-        return jsonify({"error": "Missing accountId"}), 400
-
-    try:
-        print(f"[DEBUG] Resetting processed_form_usage flag for account {account_id}")
-        reset_count = reset_processed_form_usage(account_id=int(account_id))
-        print(f"[DEBUG] Reset {reset_count} events for account {account_id}")
-        return jsonify({
-            "message": f"Reset processed_form_usage flag for {reset_count} events",
-            "account_id": account_id,
-            "events_reset": reset_count
-        }), 200
-    except Exception as e:
-        print(f"[ERROR] Failed to reset form processing for account {account_id}: {str(e)}")
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-def reset_processed_form_usage(account_id: int) -> int:
-    """
-    🔄 Reset the processed_form_usage flag to False for all events of an account.
-    This allows re-processing of form events for testing purposes.
-    
-    Args:
-        account_id: The account to reset form processing for
-        
-    Returns:
-        int: Number of events that were reset
-    """
-    print(f"[DEBUG] 🔄 Resetting processed_form_usage flag for account {account_id}")
-    
-    # 🔄 Update all events for this account to mark them as unprocessed
+def reset_processed_form_usage(session, account_id: int) -> int:
+    """Reset processed_form_usage flag and delete existing FormUsage records for an account."""
     updated_count = (
-        db.session.query(RawEvent)
+        session.query(RawEvent)
         .filter_by(account_id=account_id, processed_form_usage=True)
         .update({"processed_form_usage": False})
     )
-    
-    # 🗑️ Also clear existing FormUsage records for this account to avoid duplicates
     deleted_count = (
-        db.session.query(FormUsage)
+        session.query(FormUsage)
         .filter_by(account_id=account_id)
         .delete()
     )
-    
-    db.session.commit()
-    
-    print(f"[DEBUG] ✅ Reset {updated_count} events and deleted {deleted_count} existing FormUsage records")
+    session.commit()
     return updated_count
 
-def detect_and_save_form_usage(account_id: int):
-    """
-    🎯 Simple and robust form usage analysis that prevents duplicates.
-    
-    Process each event individually and use proper upsert logic to ensure
-    only one FormUsage record exists per unique form.
-    
-    Args:
-        account_id: The account to process form events for
-    """
-    
-    # 📥 Get all unprocessed form events
-    # print(f"[DEBUG] 📥 Fetching unprocessed form events for account {account_id}")
-    
+def detect_and_save_form_usage(session, account_id: int) -> int:
+    """Process unprocessed form events for a given account and save usage metrics."""
     unprocessed_events = (
-        db.session.query(RawEvent)
+        session.query(RawEvent)
         .filter_by(processed_form_usage=False, account_id=account_id)
         .filter(RawEvent.event_type.in_(["change", "click", "submit"]))
-        .order_by(RawEvent.timestamp)  # ⏰ Process in chronological order
+        .order_by(RawEvent.timestamp)
         .all()
     )
-    
-    print(f"[DEBUG] 📊 Found {len(unprocessed_events)} unprocessed events")
-    
     if not unprocessed_events:
-        return
+        return 0
 
-    # � Process each event individually
+    processed_count = 0
+
     for event in unprocessed_events:
-        print(f"[DEBUG] ⚡ Processing event {event.id}: {event.event_type}")
-        
-        # 🔍 Extract form metadata
         metadata = extract_form_metadata(event.elements_chain, event.current_url)
         if not metadata:
-            print(f"[DEBUG] ❌ No form found - marking event {event.id} as processed")
             event.processed_form_usage = True
             continue
 
         form_hash = metadata["formHash"]
-        print(f"[DEBUG] 🎯 Event belongs to form {form_hash}")
-        
-        # 🔍 Find existing FormUsage record or create new one
-        form_usage = db.session.query(FormUsage).filter_by(
+
+        form_usage = session.query(FormUsage).filter_by(
             account_id=account_id,
             session_id=event.session_id,
             pathname=event.pathname,
             form_hash=form_hash
         ).first()
-        
+
         if not form_usage:
-            # 🆕 Create new FormUsage record
-            print(f"[DEBUG] 🆕 Creating new FormUsage for form {form_hash}")
-            
-            # 🔧 Set start time immediately to avoid NOT NULL constraint
-            start_time = event.timestamp
-            
             form_usage = FormUsage(
                 account_id=account_id,
                 session_id=event.session_id,
@@ -380,80 +277,44 @@ def detect_and_save_form_usage(account_id: int):
                 form_hash=form_hash,
                 form_class=metadata["formClass"],
                 form_index=metadata["formIndex"],
-                started_at=start_time,  # 🔧 Always set start time
+                started_at=event.timestamp,
                 submitted_at=None,
                 duration=None,
-                status="abandoned",  # Default to abandoned
+                status="abandoned",
                 input_count=0,
                 last_field=None,
                 submit_text=None,
                 elements_chain=event.elements_chain,
-                fields_engaged={
-                    "fields": [],
-                    "sequence": [],
-                    "unique": 0
-                }
+                fields_engaged={"fields": [], "sequence": [], "unique": 0}
             )
-            db.session.add(form_usage)
-            # � Flush to get the ID for logging
-            db.session.flush()
-            print(f"[DEBUG] ✅ Created FormUsage record ID {form_usage.id}")
-        else:
-            print(f"[DEBUG] 🔄 Found existing FormUsage record ID {form_usage.id}")
+            session.add(form_usage)
+            session.flush()
 
-        # 🔄 Update FormUsage based on event type
         if event.event_type == "change":
-            # ⏰ Set start time if this is the first interaction
             if not form_usage.started_at:
                 form_usage.started_at = event.timestamp
-                print(f"[DEBUG] 🚀 Form started at {event.timestamp}")
-            
-            # 📝 Extract field identifier and update engagement tracking
             field_identifier = getattr(event, 'x_path', None)
             update_fields_engaged(form_usage, field_identifier, event.timestamp)
-            print(f"[DEBUG] 📝 Updated field engagement for: {field_identifier}")
-
-            # � Update last field and increment count
             form_usage.last_field = field_identifier or "unknown_field"
             form_usage.input_count = (form_usage.input_count or 0) + 1
-            print(f"[DEBUG] � Updated input count to {form_usage.input_count}")
-            
+
         elif event.event_type == "click":
-            # Detect a submit-intent click and capture button text/selector
             if is_submit_click(event.elements_chain):
-                # Ensure we have a start time for consistent windows later
                 if not form_usage.started_at:
                     form_usage.started_at = event.timestamp
-
-                # Save human label for the submit control if available
                 btn_text = extract_button_text(event.elements_chain)
                 if btn_text:
                     form_usage.submit_text = btn_text
-
-                # Optionally, record the clicked control as "last_field"
-                # (useful for later heuristics / debugging)
                 form_usage.last_field = getattr(event, 'x_path', None) or form_usage.last_field
 
-                # NOTE: we DO NOT mark as submitted here. Success is only when we see a 'submit' event.
-                # This keeps failure vs success determination clean for analytics.
-
         elif event.event_type == "submit":
-            # ✅ Mark form as completed
             form_usage.submitted_at = event.timestamp
             form_usage.status = "completed"
-            
-            # ⏱️ Calculate duration if we have start time
             if form_usage.started_at:
                 form_usage.duration = int((event.timestamp - form_usage.started_at).total_seconds())
-                print(f"[DEBUG] ✅ Form completed in {form_usage.duration} seconds")
-            else:
-                print(f"[DEBUG] ✅ Form completed (no start time recorded)")
 
-        # ✅ Mark event as processed
         event.processed_form_usage = True
-        print(f"[DEBUG] ✅ Marked event {event.id} as processed")
+        processed_count += 1
 
-    # 💾 Commit all changes
-    print(f"[DEBUG] 💾 Committing changes for {len(unprocessed_events)} events")
-    db.session.commit()
-    print(f"[INFO] 🎉 Form usage analysis complete for account {account_id}")
+    session.commit()
+    return processed_count

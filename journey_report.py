@@ -1,3 +1,5 @@
+
+#this is a test file to try out statistical functions, not for production.
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 import pandas as pd

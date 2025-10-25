@@ -57,6 +57,40 @@ def extract_base_url_pattern(url):
     # Apply normalization
     return normalize_url_for_matching(base_url)
 
+from urllib.parse import urlsplit
+from fnmatch import fnmatch
+
+def _strip_query_and_fragment(u: str) -> str:
+    parts = urlsplit(u)
+    base = f"{parts.scheme}://{parts.netloc}{parts.path}"
+    # normalize trailing slash (except root)
+    if base.endswith("/") and len(base) > len(f"{parts.scheme}://{parts.netloc}/"):
+        base = base[:-1]
+    return base
+
+def urls_glob_match(event_url: str, pattern_url: str, *, accept_base_for_trailing_glob: bool = True) -> bool:
+    """
+    Non-breaking, glob-aware matcher:
+    - DOES NOT modify existing urls_match_pattern behavior.
+    - Use this ONLY where wildcard support is required (e.g., step insights).
+    - Removes query/fragment, supports '*' anywhere in the pattern.
+    - If pattern ends with '/*', optionally accept the base path too.
+      Example: pattern '.../budget/*' matches '.../budget' and '.../budget/123'.
+
+    Returns True if event_url matches pattern_url under the rules above.
+    """
+    if not event_url or not pattern_url:
+        return False
+
+    event_base = _strip_query_and_fragment(event_url)
+    pattern_base = _strip_query_and_fragment(pattern_url)
+
+    if accept_base_for_trailing_glob and pattern_base.endswith("/*"):
+        base_without_glob = pattern_base[:-2]
+        if event_base == base_without_glob:
+            return True
+
+    return fnmatch(event_base, pattern_base)
 
 def urls_match_pattern(event_url, pattern_url):
     """

@@ -30,17 +30,18 @@ def compare_elements(string1, string2):
         # Extract key-value pairs from the normalized string.
         return dict(re.findall(r'([\w:-]+)="(.*?)"', s))
 
+    # Detect XPaths: start with '//' or contain '@' with single quotes
+    if string1.strip().startswith("//") or string2.strip().startswith("//"):
+        return string1.strip() == string2.strip()
+
     normalized_string1 = normalize_string(string1.split(';')[0])
     normalized_string2 = normalize_string(string2.split(';')[0])
-    
-    # print(f"[DEBUG compare_elements] Normalized string1: {normalized_string1}")
-    # print(f"[DEBUG compare_elements] Normalized string2: {normalized_string2}")
 
     kv_pairs1 = extract_key_value_pairs(normalized_string1)
     kv_pairs2 = extract_key_value_pairs(normalized_string2)
     
-    print(f"[DEBUG compare_elements] Key-value pairs1: {kv_pairs1}")
-    print(f"[DEBUG compare_elements] Key-value pairs2: {kv_pairs2}")
+    # print(f"[DEBUG compare_elements] Key-value pairs1: {kv_pairs1}")
+    # print(f"[DEBUG compare_elements] Key-value pairs2: {kv_pairs2}")
 
     # Check if all key-value pairs in string2 are present in string1.
     result = all(kv_pairs2.get(key) == kv_pairs1.get(key) for key in kv_pairs2)

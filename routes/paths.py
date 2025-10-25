@@ -35,59 +35,7 @@ THRESHOLD_FAILURE_HOURS = 12  # After 12 hours, a journey is considered failed
 #             ]
 #         }
 #     },
-#     {
-#         "session_id": "2",
-#         "user_id": "user2",
-#         "status": "indirect_success",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ],
-#             "lite/airbnb/connect": [
-#                 "//button[contains(., 'First, connect to Airbnb')]",
-#                 "//button[contains(., 'abc')]"  # Unexpected step
-#             ],
-#             "lite/airbnb/select": [
-#                 "//button[contains(., 'Import your listings')]"
-#             ]
-#         }
-#     },
-#     {
-#         "session_id": "3",
-#         "user_id": "user3",
-#         "status": "indirect_success",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ],
-#             "lite/airbnb/connect": [
-#                 "//button[contains(., 'First, connect to Airbnb')]",
-#                 "//button[contains(., 'abc')]",  # Unexpected step
-#                 "//button[contains(., '123')]"   # Unexpected step
-#             ],
-#             "lite/airbnb/select": [
-#                 "//button[contains(., 'Import your listings')]"
-#             ]
-#         }
-#     },
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ],
-#             "lite/airbnb/connect": [
-#                 "//button[contains(., 'First, connect to Airbnb')]",
-#                 "//button[contains(., 'abc')]"  # Unexpected step
-#             ],
-#             "lite/airbnb/select": [
-#                 "//button[contains(., 'Import your listings')]"
-#             ]
-#         }
-#     }
-# ]
+
 
 # funnel_mock = [
 #     {
@@ -100,120 +48,7 @@ THRESHOLD_FAILURE_HOURS = 12  # After 12 hours, a journey is considered failed
 #             ]
 #         }
 #     }, #failed 1
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ]
-#         }
-#     }, #failed 1
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ]
-#         }
-#     },  # failed 1
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ]
-#         }
-#     },  # failed 1
 #
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ],
-#             "lite/airbnb/connect": [
-#                 "//button[contains(., 'First, connect to Airbnb')]",
-#             ]
-#         }
-#     }, #failed 2
-#     {
-#         "session_id": "1",
-#         "user_id": "user1",
-#         "status": "success",
-#         "events": {
-#             "/": [
-#                 "//button[contains(., 'Import listings')]"
-#             ],
-#             "lite/airbnb/connect": [
-#                 "//button[contains(., 'First, connect to Airbnb')]"
-#             ],
-#             "lite/airbnb/select": [
-#                 "//button[contains(., 'Import your listings')]"
-#             ]
-#         }
-#     },  # success
-#
-# ]
-
-# Sample mock data with timestamps
-# funnel_mock = [
-#     {
-#         "session_id": "1",
-#         "user_id": "user1",
-#         "status": "fail",
-#         "events": {
-#             "/": [{"elements_chain": "Import listings", "timestamp": 1700000005}]
-#         }
-#     },
-#     {
-#         "session_id": "2",
-#         "user_id": "user2",
-#         "status": "success",
-#         "events": {
-#             "/": [{"elements_chain": "Import listings", "timestamp": 1700000005}],
-#             "lite/airbnb/connect": [{"elements_chain": "First, connect to Airbnb", "timestamp": 1700000025}],
-#             "lite/airbnb/select": [{"elements_chain": "Import your listings", "timestamp": 1700000205}]
-#         }
-#     },
-#     {
-#         "session_id": "3",
-#         "user_id": "user3",
-#         "status": "success",
-#         "events": {
-#             "/": [{"elements_chain": "Import listings", "timestamp": 1700000005}],
-#             "lite/airbnb/connect": [
-#                 {"elements_chain": "First, connect to Airbnb", "timestamp": 1700000025}],
-#             "lite/airbnb/select": [{"elements_chain": "Import your listings", "timestamp": 1700000205}]
-#         }
-#     },
-#     {
-#         "session_id": "3",
-#         "user_id": "user3",
-#         "status": "success",
-#         "events": {
-#             "/": [{"elements_chain": "Import listings", "timestamp": 1700000005}],
-#             "lite/airbnb/connect": [{"elements_chain": "abcd", "timestamp": 1700000025}]
-#         }
-#     },
-#     {
-#         "session_id": "4",
-#         "user_id": "user4",
-#         "status": "failed",
-#         "events": {
-#             "/": [{"elements_chain": "Import listings", "timestamp": 1700000005}],
-#             "lite/airbnb/connect": [{"elements_chain": "First, connect to Airbnb", "timestamp": 1700000025}],
-#             "lite/airbnb/connect2": [{"elements_chain": "Drop", "timestamp": 1700000095}]
-#
-#         }
-#     },
 # ]
 
 def get_page_title(page_title, trimmed_url):
@@ -630,15 +465,6 @@ def journey(journey_id):
     # unpack and get summaries from users journey data
     user_journeys = journey_data["user_journeys"]
     ideal_journey = journey_data["ideal_journey"]
-
-    # Build the user journey tree
-    #user_journeys_v2 = fetch_and_structure_user_journeys(journey_id)
-    #print(user_journeys_v2)
-
-    #journey_tree = build_tree(ideal_journey, user_journeys_v2)
-
-    #json_output = json.dumps(tree_to_json(journey_tree), indent=2)
-    #print(json_output)
 
     # Convert tree to JSON format
     def tree_to_dict(node):

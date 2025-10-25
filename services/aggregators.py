@@ -3,17 +3,17 @@ from sqlalchemy.orm import Session
 from models import EventsUsage, FormUsage, JourneyFriction, PageUsage
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text, desc
+from sqlalchemy import func, text, desc, true
 from db import db
 import math
 from utils.url_utils import make_pretty_url
 
-def get_page_usage(account_id: int, limit: int = 20):
+def     get_page_usage(session: Session, account_id: int, limit: int = 20):
     """
     Fetch page usage stats for an account, ordered by total visits (desc).
     """
     rows = (
-        PageUsage.query
+        session.query(PageUsage)
         .filter(PageUsage.account_id == account_id)
         .order_by(PageUsage.total_visits.desc())
         .limit(limit)
@@ -34,13 +34,13 @@ def get_page_usage(account_id: int, limit: int = 20):
     return results
 
 
-def get_top_fields(db: Session, account_id: int, days: int = 365, limit: int = 5):
+def get_top_fields(session: Session, account_id: int, days: int = 365, limit: int = 5):
     """
     Aggregate EventsUsage for most-used fields (clicks/inputs).
     Mirrors the UI logic.
     """
     rows = (
-        db.session.query(
+        session.query(
             EventsUsage.x_path.label("xpath"),        # <-- use x_path
             EventsUsage.pathname.label("pathname"),
             EventsUsage.event_type.label("eventType"), # <-- use event_type
@@ -65,39 +65,12 @@ def get_top_fields(db: Session, account_id: int, days: int = 365, limit: int = 5
     ]
 
 
-def get_top_navigation_issues(account_id: int, limit: int = 5):
-    """
-    Fetch top navigation-related friction issues.
-    """
+def get_top_navigation_issues(session, account_id: int, limit: int = 5):
     friction_types = ["BACKTRACKING", "SHORT_DWELL", "LONG_DWELL"]
 
     rows = (
-        JourneyFriction.query
+        session.query(JourneyFriction)
         .filter(JourneyFriction.account_id == account_id)
-        .filter(JourneyFriction.friction_type.in_(friction_types))
-        .order_by(desc(JourneyFriction.volume))
-        .limit(limit)
-        .all()
-    )
-
-    return [
-        {
-            "id": row.id,
-            "frictionType": row.friction_type.value if hasattr(row.friction_type, "value") else row.friction_type,
-            "url": row.url,
-            "eventName": row.event_name,
-            "volume": row.volume
-        }
-        for row in rows
-    ]
-
-    """
-    Fetch top navigation-related friction issues (backtracking, short dwell, long dwell).
-    """
-    friction_types = ["BACKTRACKING", "SHORT_DWELL", "LONG_DWELL"]
-
-    rows = (
-        JourneyFriction.filter(JourneyFriction.account_id == account_id)
         .filter(JourneyFriction.friction_type.in_(friction_types))
         .order_by(desc(JourneyFriction.volume))
         .limit(limit)
@@ -108,13 +81,14 @@ def get_top_navigation_issues(account_id: int, limit: int = 5):
     for row in rows:
         results.append({
             "id": row.id,
-            "frictionType": row.friction_type,
-            "url": row.url,                 # optionally normalize with makePrettyUrl
+            "frictionType": row.friction_type.value if hasattr(row.friction_type, "value") else str(row.friction_type),
+            "url": row.url,
             "eventName": row.event_name,
             "volume": row.volume
         })
 
     return results
+
 
 
 def format_duration(seconds: int) -> str:
@@ -124,8 +98,7 @@ def format_duration(seconds: int) -> str:
     s = seconds % 60
     return f"{m}m {s}s" if m else f"{s}s"
 
-
-def get_form_usage(account_id: int, days: int = 30, limit: int = 5):
+def get_form_usage(session: Session, account_id: int, days: int = 30, limit: int = 5):
     """
     Port of the GetTopFormDropOffs resolver from Next.js into Flask/SQLAlchemy.
     """
@@ -139,7 +112,7 @@ def get_form_usage(account_id: int, days: int = 30, limit: int = 5):
     )
 
     base = (
-        db.session.query(
+        session.query(
             scoped.c.pathname,
             scoped.c.formHash,
             func.count().label("total"),
@@ -153,14 +126,16 @@ def get_form_usage(account_id: int, days: int = 30, limit: int = 5):
 
     # top drop field
     drops = (
-        db.session.query(
+        session.query(
             scoped.c.pathname,
             scoped.c.formHash,
             scoped.c.lastField,
             func.count().label("dropCount"),
             func.sum(func.count()).over(partition_by=(scoped.c.pathname, scoped.c.formHash)).label("totalAbandons"),
-            func.row_number().over(partition_by=(scoped.c.pathname, scoped.c.formHash),
-                                   order_by=func.count().desc()).label("rn")
+            func.row_number().over(
+                partition_by=(scoped.c.pathname, scoped.c.formHash),
+                order_by=func.count().desc()
+            ).label("rn")
         )
         .filter(scoped.c.status == "abandoned")
         .filter(scoped.c.lastField.isnot(None))
@@ -170,22 +145,22 @@ def get_form_usage(account_id: int, days: int = 30, limit: int = 5):
     )
 
     top_drop = (
-        db.session.query(drops)
+        session.query(drops)
         .filter(drops.c.rn == 1)
         .subquery()
     )
 
     # account median duration
     acct = (
-        db.session.query(
+        session.query(
             func.percentile_cont(0.5).within_group(scoped.c.duration).filter(scoped.c.status == "completed").label("accountMedian")
         )
         .subquery()
     )
 
-    # join them
+    # ✅ Final query: join base, top_drop, and acct safely
     rows = (
-        db.session.query(
+        session.query(
             base.c.pathname,
             base.c.formHash,
             base.c.total,
@@ -202,90 +177,28 @@ def get_form_usage(account_id: int, days: int = 30, limit: int = 5):
             (top_drop.c.pathname == base.c.pathname) &
             (top_drop.c.formHash == base.c.formHash)
         )
+        .join(acct, true())  # 👈 explicitly join acct (one row) with no condition
         .order_by(
             (base.c.abandons.cast(db.Float) /
-            func.nullif(base.c.total.cast(db.Float), 0)).desc()
+             func.nullif(base.c.total.cast(db.Float), 0)).desc()
         )
         .limit(limit)
         .all()
     )
 
-    # scoring
-    MIN_ATTEMPTS = 3
-    ABANDON_THRESH = 0.30
-    SLOW_ABS = 60
-    SLOW_MULT = 1.25
-    DROP_SHARE = 0.40
-    DROP_MIN = 5
-
-    results = []
-    for r in rows:
-        total = int(r.total or 0)
-        abandons = int(r.abandons or 0)
-        completes = int(r.completes or 0)
-        completion_rate = math.floor((completes / total) * 100) if total else 0
-        median_sec = int(r.medianDur) if r.medianDur is not None else None
-        acc_median = int(r.accountMedian) if r.accountMedian is not None else None
-
-        drop_count = int(r.dropCount or 0)
-        total_abandons = int(r.totalAbandons or 0)
-        drop_pct = (drop_count / total_abandons) if total_abandons else 0
-
-        # scoring logic
-        points = 0
-        reasons = []
-        label, color = "Smooth", "green"
-
-        if total < MIN_ATTEMPTS:
-            label, color = "Insufficient data", "gray"
-        else:
-            abandon_rate = abandons / total if total else 0
-            if abandon_rate >= ABANDON_THRESH:
-                points += 2
-                reasons.append(f"High abandon rate ({abandon_rate:.0%})")
-
-            if median_sec is not None:
-                slow_vs_abs = median_sec > SLOW_ABS
-                slow_vs_acct = acc_median and median_sec > acc_median * SLOW_MULT
-                if slow_vs_abs or slow_vs_acct:
-                    points += 1
-                    reasons.append(f"Slow median time ({format_duration(median_sec)})")
-
-            if total_abandons >= DROP_MIN and drop_pct >= DROP_SHARE:
-                points += 1
-                reasons.append(f"Many quits at {r.lastField or 'Unknown'} ({drop_pct:.0%})")
-
-            if points >= 3:
-                label, color = "Fix", "red"
-            elif points >= 1:
-                label, color = "Watch", "amber"
-
-        results.append({
-            "page": make_pretty_url(r.pathname),
-            "formHash": r.formHash,
-            "completionRate": completion_rate,
-            "medianTime": format_duration(median_sec) if median_sec else "N/A",
-            "dropField": r.lastField or "Unknown",
-            "attempts": total,
-            "abandonCount": abandons,
-            "friction": {"label": label, "color": color, "reasons": reasons}
-        })
-
-    return results
+    # then your scoring logic continues...
 
 
-def build_summary_for_account(db: Session, account_id: int) -> dict:
+def build_summary_for_account(session: Session, account_id: int) -> dict:
     """
     Aggregate data from PageUsage, EventUsage, FormUsage, and JourneyFriction
     into a structured JSON summary.
     """
 
-
-
-    top_fields = get_top_fields(db, account_id, days=365, limit=5)
-    top_navigation_issues = get_top_navigation_issues(account_id)
-    page_usage = get_page_usage(account_id)
-    form_usage = get_form_usage(account_id)
+    top_fields = get_top_fields(session, account_id, days=365, limit=5)
+    top_navigation_issues = get_top_navigation_issues(session, account_id)
+    page_usage = get_page_usage(session, account_id)
+    form_usage = get_form_usage(session, account_id)
 
     return {
         "pageUsage": page_usage,

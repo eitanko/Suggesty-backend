@@ -78,6 +78,19 @@ def process_raw_events(session: Session, account_id: int = None):
     
     print(f"[DEBUG] Processing {len(raw_events_df)} raw events against {len(ideal_journeys_df)} ideal journeys")
     
+    # Cache earliest timestamp for each session_id
+    session_start_cache = (
+        session.query(RawEvent.session_id, RawEvent.timestamp)
+        .order_by(RawEvent.session_id, RawEvent.timestamp.asc())
+        .all()
+    )
+
+    # Convert to dict of session_id -> first timestamp
+    session_start_dict = {}
+    for sid, ts in session_start_cache:
+        if sid not in session_start_dict:
+            session_start_dict[sid] = ts
+
     for index, raw_event_row in raw_events_df.iterrows():
         # Accessing the original event object, and the values we need to compare
         raw_event = raw_event_row['raw_event_obj']
@@ -85,13 +98,6 @@ def process_raw_events(session: Session, account_id: int = None):
         event_url = raw_event_row['url']
         event_elements_chain = raw_event_row['elements_chain']
         event_xpath = raw_event_row['x_path']  # Use stored XPath from RawEvent
-
-        # print(f"\n[DEBUG] Processing event {raw_event.id}:")
-        # print(f"  User: {event_distinct_id}")
-        # print(f"  URL: {event_url}")
-        # print(f"  Event Type: {raw_event.event_type}")
-        # # print(f"  Elements chain: {event_elements_chain}")
-        # print(f"  XPath: {event_xpath}")
 
         # Skip pageview and pageleave events - they don't participate in journey matching
         if raw_event.event_type in ['pageview', 'pageleave', 'change', 'submit']:
@@ -116,28 +122,19 @@ def process_raw_events(session: Session, account_id: int = None):
             ).first()
 
             if existing_cj:
-                # print( f"[INFO] Skipping new CJ — user {event_distinct_id} already has an active journey {existing_cj.id} for template {journey_id}")
                 continue  # Don’t process this event further
 
             # Match event with first step of the ideal journey
             first_step = journey_row['first_step']
             
-            # Debug: Let's see what we're working with
-            # print(f"[DEBUG] Raw first_step type: {type(first_step)}")
-            # print(f"[DEBUG] Raw first_step value: {first_step}")
-            
             # Parse the JSON string and extract what we need
             try:
                 # Just parse the JSON directly - no need to strip quotes now
                 parsed_step = json.loads(first_step)
-                # print(f"[DEBUG] Successfully parsed - type: {type(parsed_step)}")
             except Exception as e:
-                # print(f"[ERROR] JSON parsing failed: {e}")
-                # print(f"[ERROR] Raw data: {first_step}")
                 continue
                 
             first_step_url = parsed_step.get("url")
-            first_step_elements_chain = parsed_step.get("elementsChain")
             first_step_xpath = parsed_step.get("xpath")  # Get xpath from stored step data
             
             # URLs are already normalized at entry point, so use directly
@@ -160,6 +157,7 @@ def process_raw_events(session: Session, account_id: int = None):
             if url_match and elements_match:
                 print(f"[DEBUG] ✅ MATCH FOUND! Creating new CustomerJourney for journey {journey_id}")
                 # Match found — start a new CustomerJourney
+
                 new_customer_journey = CustomerJourney(
                     session_id=raw_event.session_id,
                     person_id=event_distinct_id,
@@ -168,6 +166,7 @@ def process_raw_events(session: Session, account_id: int = None):
                     status=JourneyStatusEnum.IN_PROGRESS,
                     start_time=raw_event.timestamp,
                     end_time=raw_event.timestamp,
+                    session_start_time = session_start_dict.get(raw_event.session_id, raw_event.timestamp),
                     total_steps=journey_row['total_steps']
                 )
 
@@ -238,10 +237,6 @@ def process_raw_events(session: Session, account_id: int = None):
             if not ideal_journey:
                 print(f"[ERROR] Could not find ideal journey {cj.journey_id}")
                 continue  # safety check, shouldn't happen
-
-            # print(f"[DEBUG] Ideal journey {ideal_journey.id} has {len(ideal_journey.steps)} steps total")
-            # for i, step in enumerate(ideal_journey.steps):
-                # print(f"[DEBUG] Step {i}: URL='{step.url}', XPath='{step.x_path}'")
 
             # We need to check if the current step index is within the bounds of the ideal journey
             if cj.current_step_index >= len(ideal_journey.steps):
